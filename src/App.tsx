@@ -666,14 +666,6 @@ export default function App() {
           onClose={() => setInspectingUser(null)}
         />
       )}
-
-      {isSupabaseModalOpen && (
-        <SupabaseSetupModal
-          status={supabaseStatus}
-          onClose={() => setIsSupabaseModalOpen(false)}
-          onRefreshStatus={refreshSupabaseStatus}
-        />
-      )}
     </div>
   );
 }
