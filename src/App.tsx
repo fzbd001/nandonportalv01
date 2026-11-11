@@ -9,7 +9,6 @@ import { ProfileEditModal } from './components/modals/ProfileEditModal.tsx';
 import { RegisterUserModal } from './components/modals/RegisterUserModal.tsx';
 import { PermanentLogoModal } from './components/modals/PermanentLogoModal.tsx';
 import { DownloadReportModal } from './components/modals/DownloadReportModal.tsx';
-import { SupabaseSetupModal } from './components/modals/SupabaseSetupModal.tsx';
 import { AttendanceLog, Deliverable, ExportTimeframe, NotificationItem, User } from './types.ts';
 import {
   checkSupabaseStatus,
