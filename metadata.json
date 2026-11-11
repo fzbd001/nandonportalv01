@@ -1,0 +1,6 @@
+{
+  "name": "NANDAN - Office Employee & Manager Portal",
+  "description": "Broadcast & Creative Media portal for employee attendance tracking, live shift radar, task deliverables, and director operations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

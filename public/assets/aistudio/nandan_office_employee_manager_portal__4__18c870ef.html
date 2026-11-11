@@ -1,0 +1,2345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NANDAN - Office Employee & Manager Portal</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: radial-gradient(circle at 10% 20%, rgba(254, 242, 242, 0.85) 0%, rgba(248, 250, 252, 0.95) 50%, rgba(241, 245, 249, 0.9) 100%);
+      min-height: 100vh;
+      color: #1e293b;
+    }
+
+    /* Ambient Lighting Background */
+    .ambient-orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(80px);
+      z-index: -1;
+      opacity: 0.5;
+      pointer-events: none;
+    }
+    .orb-1 {
+      top: -10%;
+      left: -5%;
+      width: 500px;
+      height: 500px;
+      background: linear-gradient(135deg, rgba(255, 30, 74, 0.2), rgba(244, 63, 94, 0.08));
+    }
+    .orb-2 {
+      bottom: -15%;
+      right: -10%;
+      width: 600px;
+      height: 600px;
+      background: linear-gradient(135deg, rgba(225, 29, 72, 0.12), rgba(59, 130, 246, 0.08));
+    }
+
+    /* Apple Liquid Glass Panels */
+    .glass-panel {
+      background: rgba(255, 255, 255, 0.78);
+      backdrop-filter: blur(24px) saturate(190%);
+      -webkit-backdrop-filter: blur(24px) saturate(190%);
+      border: 1px solid rgba(255, 255, 255, 0.85);
+      box-shadow: 0 20px 45px -15px rgba(220, 38, 38, 0.05), 0 10px 25px -10px rgba(0, 0, 0, 0.03), inset 0 1px 1px 0 rgba(255, 255, 255, 0.95);
+    }
+
+    /* Tactile 3D Soft Cards */
+    .stat-card {
+      background: rgba(255, 255, 255, 0.88);
+      backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.9);
+      box-shadow: 0 4px 15px -3px rgba(0, 0, 0, 0.04), inset 0 1px 0 0 rgba(255, 255, 255, 1);
+    }
+
+    /* Red Squircle Logo Badge */
+    .nandan-logo-badge {
+      width: 46px;
+      height: 46px;
+      border-radius: 22%;
+      background: linear-gradient(145deg, #FF1E4A 0%, #D90429 100%);
+      box-shadow: 0 8px 18px -4px rgba(217, 4, 41, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .nandan-logo-badge:hover {
+      transform: scale(1.04);
+    }
+
+    /* Pill Buttons (Check In & Check Out) */
+    .btn-pill-checkin {
+      background: linear-gradient(145deg, #059669 0%, #047857 100%);
+      box-shadow: 0 8px 18px -4px rgba(5, 150, 105, 0.38), inset 0 1px 1px rgba(255, 255, 255, 0.4);
+      border-radius: 9999px;
+      color: #ffffff;
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+    .btn-pill-checkin:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 22px -4px rgba(5, 150, 105, 0.48);
+    }
+    .btn-pill-checkin:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none !important;
+      box-shadow: none !important;
+    }
+
+    .btn-pill-checkout {
+      background: linear-gradient(145deg, #FF1E4A 0%, #D90429 100%);
+      box-shadow: 0 8px 18px -4px rgba(225, 29, 72, 0.38), inset 0 1px 1px rgba(255, 255, 255, 0.4);
+      border-radius: 9999px;
+      color: #ffffff;
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+    .btn-pill-checkout:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 22px -4px rgba(225, 29, 72, 0.48);
+    }
+    .btn-pill-checkout:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none !important;
+      box-shadow: none !important;
+    }
+
+    /* Active Duty Pills */
+    .duty-pill-active {
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      color: #047857;
+    }
+    .duty-pill-inactive {
+      background: rgba(241, 245, 249, 0.85);
+      border: 1px solid rgba(203, 213, 225, 0.7);
+      color: #475569;
+    }
+
+    /* Custom Red Slider */
+    input[type=range] {
+      -webkit-appearance: none;
+      width: 100%;
+      background: transparent;
+    }
+    input[type=range]:focus {
+      outline: none;
+    }
+    input[type=range]::-webkit-slider-runnable-track {
+      width: 100%;
+      height: 8px;
+      cursor: pointer;
+      background: #e2e8f0;
+      border-radius: 9999px;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      height: 20px;
+      width: 20px;
+      border-radius: 50%;
+      background: #FF1E4A;
+      cursor: pointer;
+      -webkit-appearance: none;
+      margin-top: -6px;
+      box-shadow: 0 2px 6px rgba(255, 30, 74, 0.4);
+      border: 2px solid #ffffff;
+      transition: transform 0.1s;
+    }
+    input[type=range]::-webkit-slider-thumb:hover {
+      transform: scale(1.15);
+    }
+
+    /* Modal Backdrop */
+    .modal-backdrop {
+      background: rgba(15, 23, 42, 0.5);
+      backdrop-filter: blur(12px);
+    }
+  </style>
+</head>
+<body class="p-3 sm:p-6 lg:p-8 flex flex-col justify-start items-center relative overflow-x-hidden selection:bg-rose-500 selection:text-white">
+
+  <!-- Ambient Light Orbs -->
+  <div class="ambient-orb orb-1"></div>
+  <div class="ambient-orb orb-2"></div>
+
+  <!-- Audio Chime -->
+  <audio id="glassChime" preload="auto">
+    <source src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" type="audio/mpeg">
+  </audio>
+
+  <!-- ================= HEADER SECTION ================= -->
+  <header class="glass-panel w-full max-w-7xl mx-auto rounded-3xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-4 mb-6 z-10">
+    <!-- Brand / Logo -->
+    <div class="flex items-center gap-3.5">
+      <div id="headerLogoContainer" class="nandan-logo-badge" onclick="openPermanentLogoModal()" title="Click to update Studio Logo">
+        <span class="text-white font-extrabold text-[10px] tracking-wider select-none">NANDAN</span>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900">NANDAN</span>
+          <span class="text-[10px] uppercase font-bold tracking-widest text-rose-600 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">STUDIO</span>
+        </div>
+        <p class="text-xs text-slate-500 font-medium">Broadcast & Creative Media</p>
+      </div>
+    </div>
+
+    <!-- Live Studio Clock Pill -->
+    <div class="hidden md:flex items-center gap-2.5 px-4 py-2 rounded-full bg-white/70 border border-slate-200/80 shadow-sm text-xs font-semibold text-slate-700">
+      <i class="fa-regular fa-clock text-rose-500 text-sm"></i>
+      <span id="liveStudioClock">12:22:16 AM • Wed, Nov 11</span>
+    </div>
+
+    <!-- Header Actions (Role Switcher, Notifications, Profile) -->
+    <div class="flex items-center gap-3">
+      <!-- Staff / Boss Switcher (Visible ONLY for Boss) -->
+      <div id="headerRoleSwitcherContainer" class="hidden items-center bg-slate-100/90 p-1 rounded-full border border-slate-200 shadow-inner">
+        <button id="btnRoleStaff" onclick="switchViewMode('staff')" class="px-3.5 py-1.5 rounded-full text-xs font-bold transition-all text-white bg-slate-900 shadow-sm">
+          <i class="fa-solid fa-user text-[11px] mr-1"></i> Staff
+        </button>
+        <button id="btnRoleBoss" onclick="switchViewMode('boss')" class="px-3.5 py-1.5 rounded-full text-xs font-bold transition-all text-slate-600 hover:text-slate-900">
+          <i class="fa-solid fa-shield-halved text-[11px] mr-1 text-rose-500"></i> Boss / Radar
+        </button>
+      </div>
+
+      <!-- Notification Bell with Dropdown -->
+      <div class="relative">
+        <button onclick="toggleNotificationDropdown()" class="relative w-10 h-10 rounded-full bg-white/80 border border-slate-200/90 flex items-center justify-center text-slate-600 hover:text-slate-900 transition-all shadow-sm focus:outline-none">
+          <i class="fa-regular fa-bell text-sm"></i>
+          <span id="bellBadge" class="hidden absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white rounded-full text-[9px] font-extrabold flex items-center justify-center shadow">0</span>
+        </button>
+
+        <!-- Notification Panel Dropdown -->
+        <div id="notificationDropdown" class="hidden absolute right-0 mt-2 w-80 sm:w-88 bg-white/95 backdrop-blur-2xl rounded-2xl shadow-2xl border border-slate-100 p-3 z-50">
+          <div class="flex items-center justify-between pb-2 border-b border-slate-100 mb-2 px-1">
+            <div class="flex items-center gap-1.5">
+              <span class="text-xs font-extrabold text-slate-900">Notifications</span>
+              <span id="notifUnreadPill" class="text-[9px] font-bold bg-rose-50 text-rose-600 border border-rose-200 px-1.5 py-0.2 rounded-full">0 new</span>
+            </div>
+            <button onclick="markAllNotificationsAsRead()" class="text-[10px] font-semibold text-rose-600 hover:underline">Mark all read</button>
+          </div>
+          <div id="notificationsList" class="space-y-2 max-h-72 overflow-y-auto pr-1"></div>
+        </div>
+      </div>
+
+      <!-- Active User Profile Pill -->
+      <div class="relative">
+        <button onclick="toggleProfileDropdown()" class="flex items-center gap-2.5 pl-1.5 pr-3 py-1.5 rounded-full bg-white/90 border border-slate-200/90 shadow-sm hover:shadow transition-all">
+          <div id="userAvatarPill" class="w-8 h-8 rounded-full bg-rose-600 text-white flex items-center justify-center text-xs font-bold shadow-sm">
+            N
+          </div>
+          <div class="text-left hidden sm:block">
+            <div id="userPillName" class="text-xs font-bold text-slate-900 leading-tight">Nil Utpal</div>
+            <div id="userPillRole" class="text-[10px] text-slate-500 font-semibold leading-none">Boss</div>
+          </div>
+          <i class="fa-solid fa-chevron-down text-[10px] text-slate-400"></i>
+        </button>
+
+        <!-- Profile Dropdown -->
+        <div id="profileDropdown" class="hidden absolute right-0 mt-2 w-56 bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-slate-100 p-2 z-50">
+          <div class="px-3 py-2 border-b border-slate-100">
+            <p id="dropdownFullTitle" class="text-xs font-bold text-slate-900">Nil Utpal</p>
+            <p id="dropdownSubRole" class="text-[10px] text-slate-500 font-medium">Creative Director & Boss</p>
+          </div>
+          <div class="pt-1">
+            <button onclick="openProfileEditModal()" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors">
+              <i class="fa-solid fa-user-pen text-rose-500 text-sm"></i> Edit My Profile
+            </button>
+            <button id="btnRegisterCustomId" onclick="openRegisterUserModal()" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors">
+              <i class="fa-solid fa-id-card-clip text-rose-500 text-sm"></i> Register Custom ID
+            </button>
+            <div class="border-t border-slate-100 my-1"></div>
+            <button onclick="handleSignOut()" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 transition-colors">
+              <i class="fa-solid fa-right-from-bracket text-sm"></i> Sign Out
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= MAIN CONTENT CONTAINER ================= -->
+  <main class="w-full max-w-7xl mx-auto flex flex-col gap-6">
+
+    <!-- ================= STAFF VIEW ================= -->
+    <div id="staffViewWrapper" class="flex flex-col gap-6">
+      
+      <!-- Top Card: Attendance & Live Shift Control -->
+      <section class="glass-panel rounded-3xl p-5 sm:p-6 flex flex-col gap-5">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+          <!-- User info with avatar badge -->
+          <div class="flex items-center gap-3.5">
+            <div id="cardRoleAvatarBadge" class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-rose-500 to-rose-600 text-white flex items-center justify-center text-xl shadow-md">
+              <i class="fa-solid fa-photo-film"></i>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <h2 id="cardStaffName" class="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">Foyez</h2>
+                <span id="cardStaffEmpIdBadge" class="text-[10px] font-mono font-bold bg-slate-900 text-white px-2 py-0.5 rounded-full">EMP-101</span>
+              </div>
+              <p id="cardStaffRole" class="text-xs sm:text-sm font-semibold text-slate-500">Graphic designer</p>
+            </div>
+          </div>
+
+          <!-- Controls: Duty Status Pill + Check In + Check Out -->
+          <div class="flex items-center gap-3 flex-wrap">
+            <div id="dutyStatusPill" class="duty-pill-inactive px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 transition-all">
+              <span class="w-2 h-2 rounded-full bg-slate-400"></span>
+              <span>Checked Out</span>
+            </div>
+            <button id="btnCheckIn" onclick="handleCheckIn()" class="btn-pill-checkin px-6 py-2.5 text-xs sm:text-sm flex items-center gap-2">
+              <i class="fa-solid fa-arrow-right-to-bracket text-xs"></i> Check In
+            </button>
+            <button id="btnCheckOut" onclick="handleCheckOut()" class="btn-pill-checkout px-6 py-2.5 text-xs sm:text-sm flex items-center gap-2">
+              <i class="fa-solid fa-arrow-right-from-bracket text-xs"></i> Check Out
+            </button>
+          </div>
+        </div>
+
+        <!-- Attendance Metrics Grid (4 Stat Cards) -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 pt-1">
+          <div class="stat-card rounded-2xl p-4 flex flex-col justify-between">
+            <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400">CHECKED IN</span>
+            <span id="metricInTime" class="text-base sm:text-lg font-mono font-bold text-slate-800 mt-1">--:--</span>
+          </div>
+          <div class="stat-card rounded-2xl p-4 flex flex-col justify-between">
+            <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400">CHECKED OUT</span>
+            <span id="metricOutTime" class="text-base sm:text-lg font-mono font-bold text-slate-800 mt-1">--:--</span>
+          </div>
+          <div class="stat-card rounded-2xl p-4 flex flex-col justify-between">
+            <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400">SHIFT STATUS</span>
+            <span id="metricShiftElapsed" class="text-base sm:text-lg font-bold text-rose-600 mt-1">0h 00m active duty</span>
+          </div>
+          <div class="stat-card rounded-2xl p-4 flex flex-col justify-between">
+            <div class="flex items-center justify-between">
+              <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400">DAILY VELOCITY</span>
+              <span id="metricVelocityPill" class="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">0 Done</span>
+            </div>
+            <span id="metricVelocityPercent" class="text-base sm:text-lg font-bold text-slate-900 mt-1">0%</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Deliverables Section (Form & List) -->
+      <section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Left Column: Log Daily Deliverable Form -->
+        <div class="lg:col-span-5 glass-panel rounded-3xl p-5 sm:p-6 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center gap-3 mb-5">
+              <div class="w-8 h-8 rounded-full bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center font-bold text-sm shadow-sm">
+                +
+              </div>
+              <div>
+                <h3 class="text-base sm:text-lg font-extrabold text-slate-900">Log Daily Deliverable</h3>
+                <p class="text-[11px] text-slate-500 font-medium">Track projects & daily work progress</p>
+              </div>
+            </div>
+
+            <form id="deliverableForm" onsubmit="handleDeliverableSubmit(event)" class="space-y-4">
+              <div>
+                <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1.5">NANDAN Creative Category</label>
+                <div class="relative">
+                  <select id="taskCategory" class="w-full bg-white/90 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/40">
+                    <option value="Video Editing">Video Editing</option>
+                    <option value="Graphic Design">Graphic Design</option>
+                    <option value="Social Media Content">Social Media Content</option>
+                    <option value="Social Media Management">Social Media Management</option>
+                    <option value="Social Media News Card">Social Media News Card</option>
+                    <option value="2D / 3D Animation">2D / 3D Animation</option>
+                    <option value="Daily Weather Card">Daily Weather Card</option>
+                    <option value="Photo Card (Total Numbers)">Photo Card (Total Numbers)</option>
+                    <option value="Portal Update (Total Numbers)">Portal Update (Total Numbers)</option>
+                    <option value="News Edit">News Edit</option>
+                    <option value="Pending Job Next">Pending Job Next</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1.5">Project / Task Title</label>
+                <input type="text" id="taskTitle" required placeholder="e.g. Daily Weather Card Update & Export" class="w-full bg-white/90 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/40 placeholder-slate-400">
+              </div>
+
+              <div>
+                <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1.5">Work Notes / Revisions (Optional)</label>
+                <textarea id="taskNotes" rows="3" placeholder="Asset links, render status, review notes..." class="w-full bg-white/90 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/40 placeholder-slate-400 resize-none"></textarea>
+              </div>
+
+              <div>
+                <div class="flex items-center justify-between mb-1.5">
+                  <label class="text-[11px] font-bold uppercase tracking-wider text-slate-600">Initial Completion %</label>
+                  <span id="sliderValueText" class="text-xs font-mono font-bold text-rose-600">25%</span>
+                </div>
+                <input type="range" id="taskSlider" min="0" max="100" value="25" oninput="updateSliderText(this.value)">
+              </div>
+
+              <button type="submit" class="w-full py-3 rounded-2xl bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-600 hover:to-rose-700 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-rose-500/30 transition-all flex items-center justify-center gap-2">
+                <i class="fa-solid fa-paper-plane text-xs"></i> Submit Deliverable
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <!-- Right Column: Today's Deliverables List -->
+        <div class="lg:col-span-7 glass-panel rounded-3xl p-5 sm:p-6 flex flex-col">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h3 class="text-base sm:text-lg font-extrabold text-slate-900">Today's Deliverables</h3>
+              <p class="text-[11px] text-slate-500 font-medium">Your private shift tasks & director directives</p>
+            </div>
+            <span id="deliverableCountBadge" class="text-xs font-bold bg-slate-900 text-white px-3 py-1 rounded-full">0 Deliverables</span>
+          </div>
+
+          <div id="deliverablesListContainer" class="space-y-3.5 flex-1 overflow-y-auto max-h-[500px] pr-1"></div>
+        </div>
+
+      </section>
+
+      <!-- 5-Day Attendance Log Section (Staff View) -->
+      <section class="glass-panel rounded-3xl p-5 sm:p-7 overflow-hidden">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+          <div>
+            <h3 class="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight">5-Day Attendance Log</h3>
+            <p class="text-xs text-slate-500 font-medium mt-0.5">Recent shift check-in, check-out history and duration</p>
+          </div>
+          <span class="text-[11px] font-bold px-3 py-1 bg-slate-100 border border-slate-200 text-slate-600 rounded-full w-fit">
+            Past 5 Shifts Log
+          </span>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="border-b border-slate-200/80 text-[11px] uppercase tracking-wider font-bold text-slate-400">
+                <th class="py-3.5 px-4 font-bold">Staff / Date</th>
+                <th class="py-3.5 px-4 font-bold text-center">Check in</th>
+                <th class="py-3.5 px-4 font-bold text-center">Check out</th>
+                <th class="py-3.5 px-4 font-bold text-right">Time</th>
+              </tr>
+            </thead>
+            <tbody id="staff5DayTableBody" class="text-xs divide-y divide-slate-100">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- ================= BOSS / RADAR VIEW ================= -->
+    <div id="bossViewWrapper" class="hidden flex flex-col gap-6">
+      
+      <!-- Boss Top Operations Console Card -->
+      <section class="glass-panel rounded-3xl p-5 sm:p-6 flex flex-col gap-5">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 class="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">Director Live Operations Console</h2>
+            <p class="text-xs sm:text-sm font-semibold text-slate-500">Real-time attendance radar, workflow monitoring & confidential task delegation.</p>
+          </div>
+          <div class="flex items-center gap-3">
+            <button onclick="openDownloadReportModal()" class="px-4 py-2.5 rounded-full bg-white/90 border border-slate-200/90 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-all shadow-sm flex items-center gap-2">
+              <i class="fa-solid fa-file-arrow-down text-rose-500 text-xs"></i> Download Report
+            </button>
+            <button onclick="openAssignDirectiveModal()" class="px-5 py-2.5 rounded-full bg-gradient-to-r from-rose-500 to-rose-600 text-white text-xs font-bold hover:shadow-lg hover:shadow-rose-500/30 transition-all flex items-center gap-2">
+              <i class="fa-solid fa-paper-plane text-xs"></i> Assign Job Directive
+            </button>
+          </div>
+        </div>
+
+        <!-- 4 Boss Metric Cards -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 pt-1">
+          <div class="stat-card rounded-2xl p-4">
+            <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400">TEAM CREATIVES</span>
+            <div id="bossStatTotalStaff" class="text-xl sm:text-2xl font-extrabold text-slate-900 mt-1">4 Staff</div>
+          </div>
+          <div class="stat-card rounded-2xl p-4">
+            <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400">CURRENTLY ON DUTY</span>
+            <div id="bossStatActiveDuty" class="text-xl sm:text-2xl font-extrabold text-emerald-600 mt-1">0 Active</div>
+          </div>
+          <div class="stat-card rounded-2xl p-4">
+            <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400">DELIVERABLES IN PROGRESS</span>
+            <div id="bossStatInProgress" class="text-xl sm:text-2xl font-extrabold text-amber-500 mt-1">0 Tasks</div>
+          </div>
+          <div class="stat-card rounded-2xl p-4">
+            <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400">100% COMPLETED TODAY</span>
+            <div id="bossStatCompletedToday" class="text-xl sm:text-2xl font-extrabold text-rose-600 mt-1">0 Completed</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Team Attendance & Live Deliverable Progress Table with SHIFT TIME Column -->
+      <section class="glass-panel rounded-3xl p-6 sm:p-7 overflow-hidden">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div>
+            <h3 class="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight">Team Attendance & Live Deliverable Progress</h3>
+            <p class="text-xs text-slate-500 font-medium mt-0.5">Real-time check-in logs, check-out status, and task velocity</p>
+          </div>
+          <!-- Clean Search Pill Bar -->
+          <div class="relative w-full sm:w-72">
+            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+              <i class="fa-solid fa-magnifying-glass text-xs"></i>
+            </span>
+            <input type="text" id="radarSearchInput" oninput="handleRadarSearch(this.value)" placeholder="Search creative or role..." class="w-full bg-white/90 border border-slate-200/90 rounded-full pl-9 pr-4 py-2 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500/30 shadow-xs">
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="border-b border-slate-200/80 text-[11px] uppercase tracking-wider font-bold text-slate-400">
+                <th class="py-3.5 px-4 font-bold">CREATIVE</th>
+                <th class="py-3.5 px-4 font-bold text-center">PRESENCE STATUS</th>
+                <th class="py-3.5 px-4 font-bold text-center">CHECK IN</th>
+                <th class="py-3.5 px-4 font-bold text-center">CHECK OUT</th>
+                <th class="py-3.5 px-4 font-bold text-center">SHIFT TIME</th>
+                <th class="py-3.5 px-4 font-bold w-48">WORK VELOCITY</th>
+                <th class="py-3.5 px-4 font-bold text-right">ACTIONS</th>
+              </tr>
+            </thead>
+            <tbody id="bossRadarTableBody" class="text-xs divide-y divide-slate-100">
+              <!-- Dynamically populated rows with SHIFT TIME -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- ================= LOGIN MODAL ================= -->
+  <div id="loginModal" class="fixed inset-0 modal-backdrop flex items-center justify-center p-4 z-50">
+    <div class="glass-panel max-w-md w-full rounded-3xl p-6 sm:p-8 flex flex-col items-center shadow-2xl relative">
+      
+      <!-- Studio Emblem -->
+      <div id="loginLogoContainer" class="nandan-logo-badge mb-3 w-14 h-14" onclick="openPermanentLogoModal()" title="Click to upload/change Logo">
+        <span class="text-white font-extrabold text-xs tracking-wider select-none">NANDAN</span>
+      </div>
+      <h2 class="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">NANDAN STUDIO</h2>
+      <p class="text-xs text-slate-500 font-semibold mb-6">Broadcast & Creative Media • Portal Sign In</p>
+
+      <!-- Quick Switch User Account -->
+      <div class="w-full mb-5">
+        <label class="block text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-2">QUICK SWITCH USER ACCOUNT</label>
+        
+        <!-- Boss Card at Top -->
+        <button type="button" onclick="selectUserForLogin('boss123')" class="w-full mb-2 px-3.5 py-2 rounded-xl bg-rose-50/80 hover:bg-rose-100/80 border border-rose-200/70 text-left flex items-center justify-between transition-all group">
+          <div class="flex items-center gap-1.5">
+            <span class="text-xs font-bold text-rose-900">Nil Utpal</span>
+            <span class="text-[10px] font-semibold text-rose-500">(Boss)</span>
+          </div>
+          <span class="text-[10px] font-mono bg-white px-2 py-0.5 rounded-md text-slate-600 border border-rose-100 font-bold">boss123</span>
+        </button>
+
+        <!-- Employees in 1 single horizontal row -->
+        <div class="grid grid-cols-4 gap-1.5" id="staffQuickRow">
+          <button type="button" onclick="selectUserForLogin('EMP-101')" class="py-1.5 px-1 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-center transition-all">
+            <div class="text-[11px] font-bold text-slate-800 truncate">Foyez</div>
+          </button>
+          <button type="button" onclick="selectUserForLogin('EMP-102')" class="py-1.5 px-1 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-center transition-all">
+            <div class="text-[11px] font-bold text-slate-800 truncate">Alom</div>
+          </button>
+          <button type="button" onclick="selectUserForLogin('EMP-103')" class="py-1.5 px-1 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-center transition-all">
+            <div class="text-[11px] font-bold text-slate-800 truncate">Shimanto</div>
+          </button>
+          <button type="button" onclick="selectUserForLogin('EMP-104')" class="py-1.5 px-1 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-center transition-all">
+            <div class="text-[11px] font-bold text-slate-800 truncate">Belal</div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Login Form -->
+      <form id="loginForm" onsubmit="handleLoginSubmit(event)" class="w-full space-y-4">
+        <div>
+          <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">Employee ID</label>
+          <input type="text" id="loginEmpId" required placeholder="e.g. EMP-101 or boss123" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/40">
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">Password</label>
+          <div class="relative">
+            <input type="text" id="loginPassword" required placeholder="Enter password" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-rose-500/40 font-mono">
+            <span class="absolute right-3 top-2.5 text-slate-400 text-xs"><i class="fa-solid fa-key"></i></span>
+          </div>
+        </div>
+
+        <button type="submit" class="w-full py-3 rounded-2xl bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-600 hover:to-rose-700 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-rose-500/30 transition-all flex items-center justify-center gap-2">
+          <span>Login</span> <i class="fa-solid fa-arrow-right text-xs"></i>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================= EDIT PROFILE MODAL ================= -->
+  <div id="profileEditModal" class="hidden fixed inset-0 modal-backdrop flex items-center justify-center p-4 z-50">
+    <div class="glass-panel max-w-md w-full rounded-3xl p-6 sm:p-7 flex flex-col shadow-2xl relative">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+        <h3 class="text-base font-extrabold text-slate-900">Edit My Profile</h3>
+        <button onclick="closeProfileEditModal()" class="text-slate-400 hover:text-slate-600 text-sm"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <form onsubmit="handleProfileEditSubmit(event)" class="space-y-3.5">
+        <div>
+          <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Employee ID (Fixed)</label>
+          <input type="text" id="editProfileEmpId" readonly class="w-full bg-slate-100 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-mono font-bold text-slate-500 cursor-not-allowed">
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Your Full Name</label>
+          <input type="text" id="editProfileName" required class="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-800">
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Designation / Role</label>
+          <input type="text" id="editProfileRole" required class="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-800">
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Account Password</label>
+          <input type="text" id="editProfilePassword" required class="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-mono font-semibold text-slate-800">
+        </div>
+
+        <div class="pt-2 flex justify-end gap-2">
+          <button type="button" onclick="closeProfileEditModal()" class="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100">Cancel</button>
+          <button type="submit" class="px-5 py-2 rounded-xl bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 shadow-md">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================= REGISTER CUSTOM ID MODAL ================= -->
+  <div id="registerUserModal" class="hidden fixed inset-0 modal-backdrop flex items-center justify-center p-4 z-50">
+    <div class="glass-panel max-w-md w-full rounded-3xl p-6 sm:p-7 flex flex-col shadow-2xl relative">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+        <h3 class="text-base font-extrabold text-slate-900">Register Custom Employee ID</h3>
+        <button onclick="closeRegisterUserModal()" class="text-slate-400 hover:text-slate-600 text-sm"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <form onsubmit="handleRegisterUserSubmit(event)" class="space-y-3.5">
+        <div>
+          <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Custom Employee ID</label>
+          <input type="text" id="regEmpId" required placeholder="e.g. EMP-105" class="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-mono font-bold text-slate-800 uppercase">
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Full Name</label>
+          <input type="text" id="regName" required placeholder="e.g. Tanvir Ahmed" class="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-800">
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Designation</label>
+          <input type="text" id="regRole" required placeholder="e.g. 3D Animator" class="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-800">
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Password</label>
+          <input type="text" id="regPassword" required placeholder="Default password (e.g. 1234)" class="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-mono font-semibold text-slate-800">
+        </div>
+
+        <div class="pt-2 flex justify-end gap-2">
+          <button type="button" onclick="closeRegisterUserModal()" class="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100">Cancel</button>
+          <button type="submit" class="px-5 py-2 rounded-xl bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 shadow-md">Add Employee</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================= ASSIGN DIRECTIVE MODAL (BOSS) ================= -->
+  <div id="assignDirectiveModal" class="hidden fixed inset-0 modal-backdrop flex items-center justify-center p-4 z-50">
+    <div class="glass-panel max-w-md w-full rounded-3xl p-6 sm:p-7 flex flex-col shadow-2xl relative">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+        <h3 class="text-base font-extrabold text-slate-900">Assign Job Directive (Boss)</h3>
+        <button onclick="closeAssignDirectiveModal()" class="text-slate-400 hover:text-slate-600 text-sm"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <form onsubmit="handleAssignDirectiveSubmit(event)" class="space-y-3.5">
+        <div>
+          <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Assign To Employee</label>
+          <select id="assignTargetUserId" class="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-800"></select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Creative Category</label>
+          <select id="assignCategory" class="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-800">
+            <option value="Video Editing">Video Editing</option>
+            <option value="Graphic Design">Graphic Design</option>
+            <option value="Social Media Content">Social Media Content</option>
+            <option value="Social Media Management">Social Media Management</option>
+            <option value="Social Media News Card">Social Media News Card</option>
+            <option value="2D / 3D Animation">2D / 3D Animation</option>
+            <option value="Daily Weather Card">Daily Weather Card</option>
+            <option value="Photo Card (Total Numbers)">Photo Card (Total Numbers)</option>
+            <option value="Portal Update (Total Numbers)">Portal Update (Total Numbers)</option>
+            <option value="News Edit">News Edit</option>
+            <option value="Pending Job Next">Pending Job Next</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Directive / Project Title</label>
+          <input type="text" id="assignTitle" required placeholder="e.g. Urgent YouTube Thumbnail & Banner Revision" class="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-medium text-slate-800">
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1">Boss Special Instructions</label>
+          <textarea id="assignInstructions" rows="3" placeholder="Reference link, deadline, export specs..." class="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-medium text-slate-800 resize-none"></textarea>
+        </div>
+
+        <div class="pt-2 flex justify-end gap-2">
+          <button type="button" onclick="closeAssignDirectiveModal()" class="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100">Cancel</button>
+          <button type="submit" class="px-5 py-2 rounded-xl bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 shadow-md">Dispatch Directive</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================= PERMANENT LOGO MODAL ================= -->
+  <div id="permanentLogoModal" class="hidden fixed inset-0 modal-backdrop flex items-center justify-center p-4 z-50">
+    <div class="glass-panel max-w-md w-full rounded-3xl p-6 sm:p-7 flex flex-col shadow-2xl relative">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+        <h3 class="text-base font-extrabold text-slate-900">Set Studio Logo</h3>
+        <button onclick="closePermanentLogoModal()" class="text-slate-400 hover:text-slate-600 text-sm"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1.5">Upload Logo from Device</label>
+          <input type="file" id="logoFileInput" accept="image/*" onchange="handleLogoFileUpload(event)" class="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-rose-50 file:text-rose-700 hover:file:bg-rose-100">
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="h-px bg-slate-200 flex-1"></div>
+          <span class="text-[10px] uppercase font-bold text-slate-400">OR</span>
+          <div class="h-px bg-slate-200 flex-1"></div>
+        </div>
+        <div>
+          <label class="block text-[11px] font-bold uppercase text-slate-600 mb-1.5">Direct Image URL</label>
+          <div class="flex gap-2">
+            <input type="url" id="logoUrlInput" placeholder="https://..." class="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium text-slate-800">
+            <button onclick="saveLogoFromUrlInput()" class="px-3.5 py-2 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-xl whitespace-nowrap">Apply</button>
+          </div>
+        </div>
+        <div class="pt-2 flex justify-between items-center border-t border-slate-100">
+          <button onclick="resetDefaultLogo()" class="text-xs font-semibold text-rose-600 hover:underline">Reset to Default</button>
+          <button onclick="closePermanentLogoModal()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= DOWNLOAD WORK REPORTS MODAL ================= -->
+  <div id="downloadReportModal" class="hidden fixed inset-0 modal-backdrop flex items-center justify-center p-4 z-50 transition-opacity duration-200" onclick="handleDownloadReportBackdropClick(event)">
+    <div class="bg-white/95 backdrop-blur-2xl border border-white/80 max-w-lg w-full rounded-3xl p-6 sm:p-7 flex flex-col shadow-2xl relative" onclick="event.stopPropagation()">
+      
+      <!-- Modal Header -->
+      <div class="flex items-start justify-between pb-4 mb-2">
+        <div class="flex items-center gap-3.5">
+          <div class="w-11 h-11 rounded-2xl bg-slate-900 flex items-center justify-center shadow-md flex-shrink-0">
+            <i class="fa-solid fa-file-arrow-down text-rose-500 text-base"></i>
+          </div>
+          <div>
+            <h3 class="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight leading-snug">Download Work Reports</h3>
+            <p class="text-xs font-medium text-slate-500 mt-0.5">Export employee deliverables & attendance logs</p>
+          </div>
+        </div>
+        <!-- Circular white close button -->
+        <button onclick="closeDownloadReportModal()" class="w-9 h-9 rounded-full bg-white hover:bg-slate-50 text-slate-400 hover:text-slate-700 flex items-center justify-center shadow-md border border-slate-100 transition-all flex-shrink-0" title="Close">
+          <i class="fa-solid fa-xmark text-sm"></i>
+        </button>
+      </div>
+
+      <div class="space-y-4 pt-1">
+        <!-- SELECT EXPORT TIMEFRAME -->
+        <div>
+          <label class="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-2">SELECT EXPORT TIMEFRAME</label>
+          <div class="grid grid-cols-3 gap-2.5" id="timeframeButtonGroup">
+            <button type="button" onclick="selectExportTimeframe('daily')" id="tfBtn-daily" class="py-2.5 rounded-2xl bg-slate-900 text-white font-bold text-xs shadow-sm transition-all text-center">
+              Daily
+            </button>
+            <button type="button" onclick="selectExportTimeframe('weekly')" id="tfBtn-weekly" class="py-2.5 rounded-2xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/90 font-bold text-xs shadow-xs transition-all text-center">
+              Weekly
+            </button>
+            <button type="button" onclick="selectExportTimeframe('monthly')" id="tfBtn-monthly" class="py-2.5 rounded-2xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/90 font-bold text-xs shadow-xs transition-all text-center">
+              Monthly
+            </button>
+          </div>
+        </div>
+
+        <!-- FILTER MEMBER -->
+        <div>
+          <label class="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-2">FILTER MEMBER</label>
+          <div class="relative">
+            <select id="exportFilterMemberSelect" class="w-full bg-white border border-slate-200/90 rounded-2xl px-4 py-3 text-xs sm:text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/30 appearance-none shadow-xs cursor-pointer">
+              <option value="ALL">All Team Members (Complete Studio)</option>
+            </select>
+            <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-400">
+              <i class="fa-solid fa-chevron-down text-xs"></i>
+            </div>
+          </div>
+        </div>
+
+        <!-- Report Format Info Box -->
+        <div class="rounded-2xl bg-slate-50/90 border border-slate-200/80 p-4 flex flex-col gap-1.5 shadow-2xs">
+          <div class="flex items-center justify-between text-xs">
+            <span class="font-extrabold text-slate-800">Available Formats:</span>
+            <span class="font-mono font-bold text-rose-600 text-xs">Official PDF & CSV</span>
+          </div>
+          <p class="text-[11px] text-slate-500 leading-relaxed font-normal">
+            Includes Employee Name, ID, Check-in/out, Total Minutes, Work Updates (tasks count & details), and Absent Days count.
+          </p>
+        </div>
+
+        <!-- Action Buttons (Cancel & PDF & CSV) -->
+        <div class="pt-2 flex flex-col sm:flex-row items-center justify-between gap-2.5">
+          <button type="button" onclick="closeDownloadReportModal()" class="w-full sm:w-auto py-3 px-5 rounded-full bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs border border-slate-200/90 shadow-sm transition-all text-center">
+            Cancel
+          </button>
+          <div class="flex items-center gap-2 w-full sm:w-auto flex-1 justify-end">
+            <button type="button" onclick="executeExportReportCSV()" class="flex-1 sm:flex-initial py-3 px-4 rounded-full bg-slate-900 hover:bg-black text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5">
+              <i class="fa-solid fa-file-csv text-xs"></i>
+              <span>Export CSV</span>
+            </button>
+            <button type="button" onclick="generateAndPrintPDFReport()" class="flex-1 sm:flex-initial py-3 px-5 rounded-full bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-600 hover:to-rose-700 text-white font-bold text-xs shadow-lg shadow-rose-500/30 transition-all flex items-center justify-center gap-2">
+              <i class="fa-solid fa-file-pdf text-xs"></i>
+              <span>Download PDF</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Hidden Printable Report Container for clean PDF rendering -->
+  <div id="pdfPrintableContainer" class="hidden"></div>
+
+  <!-- ================= INSPECT SHIFT DELIVERABLES MODAL ================= -->
+  <div id="inspectModal" class="hidden fixed inset-0 modal-backdrop flex items-center justify-center p-4 z-50 transition-opacity duration-200" onclick="handleInspectBackdropClick(event)">
+    <div class="bg-white/95 backdrop-blur-2xl border border-white/80 max-w-xl w-full rounded-3xl p-6 sm:p-7 flex flex-col shadow-2xl relative max-h-[85vh] overflow-hidden" onclick="event.stopPropagation()">
+      <!-- Modal Header -->
+      <div class="flex items-start justify-between pb-4 mb-4">
+        <div>
+          <h3 id="inspectModalTitle" class="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight">Foyez's Shift Deliverables</h3>
+          <p id="inspectModalSubtitle" class="text-xs font-medium text-slate-500 mt-0.5">Graphic designer • ID: EMP-101</p>
+        </div>
+        <!-- Round White Close Button with Soft Shadow -->
+        <button onclick="closeInspectModal()" class="w-9 h-9 rounded-full bg-white hover:bg-slate-50 text-slate-400 hover:text-slate-700 flex items-center justify-center shadow-md border border-slate-100 transition-all flex-shrink-0" title="Close">
+          <i class="fa-solid fa-xmark text-sm"></i>
+        </button>
+      </div>
+
+      <!-- Deliverables List Scroll Area -->
+      <div id="inspectDeliverablesContainer" class="flex-1 overflow-y-auto space-y-3.5 pr-1 max-h-[60vh]">
+        <!-- Populated dynamically with exact cards -->
+      </div>
+
+      <!-- 5-Day Attendance History inside Inspect Modal -->
+      <div class="mt-5 pt-4 border-t border-slate-200/80">
+        <h4 class="text-xs font-extrabold uppercase tracking-wider text-slate-400 mb-2.5">Past 5 Days Attendance History</h4>
+        <div class="overflow-x-auto rounded-2xl border border-slate-200/80 bg-white/70">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr class="border-b border-slate-100 text-[10px] uppercase font-bold text-slate-400 bg-slate-50/50">
+                <th class="py-2.5 px-3">Date</th>
+                <th class="py-2.5 px-3 text-center">Check in</th>
+                <th class="py-2.5 px-3 text-center">Check out</th>
+                <th class="py-2.5 px-3 text-right">Time</th>
+              </tr>
+            </thead>
+            <tbody id="inspect5DayHistoryBody" class="divide-y divide-slate-100">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= JAVASCRIPT LOGIC ================= -->
+  <script>
+    // --- Initial Team Data Roster ---
+    const INITIAL_USERS = [
+      { id: "boss123", name: "Nil Utpal", role: "Creative Director & Boss", isBoss: true, password: "boss123" },
+      { id: "EMP-101", name: "Foyez", role: "Graphic designer", isBoss: false, password: "1234" },
+      { id: "EMP-102", name: "Alom", role: "Editor-in-chief assistant", isBoss: false, password: "1234" },
+      { id: "EMP-103", name: "Shimanto", role: "Motion Animator", isBoss: false, password: "1234" },
+      { id: "EMP-104", name: "Belal", role: "Social Media Strategist & Manager", isBoss: false, password: "1234" }
+    ];
+
+    // --- Storage Keys ---
+    const STORAGE_USERS = "nandan_users_v6";
+    const STORAGE_ACTIVE_USER = "nandan_active_user_v6";
+    const STORAGE_ATTENDANCE = "nandan_attendance_v6";
+    const STORAGE_DELIVERABLES = "nandan_deliverables_v6";
+    const STORAGE_LOGO = "nandan_custom_logo_v6";
+    const STORAGE_READ_NOTIFS = "nandan_read_notifs_v6";
+
+    // --- State ---
+    let users = [];
+    let currentUser = null;
+    let currentViewMode = "staff"; // 'staff' | 'boss'
+    let attendanceLogs = [];
+    let deliverables = [];
+    let shiftTimerInterval = null;
+    let readNotificationIds = [];
+    let radarSearchQuery = "";
+    let selectedExportTimeframe = "daily"; // 'daily' | 'weekly' | 'monthly'
+
+    // --- Helpers ---
+    function getTodayDateString() {
+      const now = new Date();
+      return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    }
+
+    function formatDateEnglish(dateObj) {
+      const day = dateObj.getDate();
+      const month = dateObj.toLocaleDateString('en-US', { month: 'short' });
+      const year = dateObj.getFullYear();
+      return `${day} ${month}, ${year}`;
+    }
+
+    function formatTime12h(date) {
+      let hours = date.getHours();
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12;
+      hours = hours ? hours : 12;
+      return `${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
+    }
+
+    function seedInitial5DayAttendance() {
+      const seeded = [];
+      const now = new Date();
+      const staffMembers = INITIAL_USERS.filter(u => !u.isBoss);
+
+      staffMembers.forEach(staff => {
+        const mockShifts = [
+          { daysAgo: 0, in: "03:14 PM", out: null, mins: 0, inProg: true },
+          { daysAgo: 1, in: "05:52 PM", out: "08:00 AM", mins: 607, inProg: false },
+          { daysAgo: 2, in: "02:42 PM", out: "10:12 PM", mins: 450, inProg: false },
+          { daysAgo: 3, in: "03:09 PM", out: "11:29 PM", mins: 500, inProg: false },
+          { daysAgo: 4, in: "12:23 PM", out: "08:28 PM", mins: 485, inProg: false },
+          { daysAgo: 5, in: "11:53 AM", out: "08:35 PM", mins: 522, inProg: false }
+        ];
+
+        mockShifts.forEach(shift => {
+          const d = new Date(now);
+          d.setDate(now.getDate() - shift.daysAgo);
+          const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+          seeded.push({
+            id: `att-${staff.id}-${dateStr}`,
+            empId: staff.id,
+            staffName: staff.name,
+            date: dateStr,
+            dateFormatted: formatDateEnglish(d),
+            checkInTime: shift.in,
+            checkInTimestamp: d.getTime(),
+            checkOutTime: shift.out,
+            isCheckedIn: shift.inProg,
+            totalMinutes: shift.mins
+          });
+        });
+      });
+
+      attendanceLogs = seeded;
+      localStorage.setItem(STORAGE_ATTENDANCE, JSON.stringify(attendanceLogs));
+    }
+
+    function initData() {
+      // 1. Read Notifications
+      const storedReadNotifs = localStorage.getItem(STORAGE_READ_NOTIFS);
+      readNotificationIds = storedReadNotifs ? JSON.parse(storedReadNotifs) : [];
+
+      // 2. Users Roster
+      const storedUsers = localStorage.getItem(STORAGE_USERS);
+      if (storedUsers) {
+        try {
+          const parsed = JSON.parse(storedUsers);
+          if (Array.isArray(parsed) && parsed.length >= INITIAL_USERS.length) {
+            users = INITIAL_USERS.map(defaultUser => {
+              const matched = parsed.find(p => p.id === defaultUser.id || (defaultUser.isBoss && p.isBoss));
+              return matched ? { ...defaultUser, password: matched.password || defaultUser.password, name: matched.name || defaultUser.name, role: defaultUser.role } : defaultUser;
+            });
+            localStorage.setItem(STORAGE_USERS, JSON.stringify(users));
+          } else {
+            users = INITIAL_USERS;
+            localStorage.setItem(STORAGE_USERS, JSON.stringify(users));
+          }
+        } catch(e) {
+          users = INITIAL_USERS;
+          localStorage.setItem(STORAGE_USERS, JSON.stringify(users));
+        }
+      } else {
+        users = INITIAL_USERS;
+        localStorage.setItem(STORAGE_USERS, JSON.stringify(users));
+      }
+
+      // 3. Active User
+      const storedActive = localStorage.getItem(STORAGE_ACTIVE_USER);
+      if (storedActive) {
+        try {
+          const parsedActive = JSON.parse(storedActive);
+          const matched = users.find(u => u.id === parsedActive.id || (parsedActive.isBoss && u.isBoss));
+          currentUser = matched || null;
+        } catch(e) {
+          currentUser = null;
+        }
+      } else {
+        currentUser = null;
+      }
+
+      // 4. Attendance
+      const storedAtt = localStorage.getItem(STORAGE_ATTENDANCE);
+      if (storedAtt) {
+        try {
+          attendanceLogs = JSON.parse(storedAtt);
+        } catch(e) {
+          attendanceLogs = [];
+        }
+      }
+      
+      if (!attendanceLogs || attendanceLogs.length < 5) {
+        seedInitial5DayAttendance();
+      }
+
+      // 5. Deliverables
+      const storedDel = localStorage.getItem(STORAGE_DELIVERABLES);
+      deliverables = storedDel ? JSON.parse(storedDel) : [
+        { id: "del-1", empId: "EMP-101", category: "Graphic Design", title: "Eid Special Promo Card Export", notes: "1080x1350 Instagram & Facebook feeds", progress: 100, completed: true, timestamp: "11:15 AM", date: getTodayDateString() },
+        { id: "del-2", empId: "EMP-102", category: "Scripting & Editorial", title: "Documentary Script Final Polish", notes: "Approved by director", progress: 100, completed: true, timestamp: "11:30 AM", date: getTodayDateString() }
+      ];
+    }
+
+    function startLiveClock() {
+      const clockEl = document.getElementById('liveStudioClock');
+      function update() {
+        const now = new Date();
+        const timeStr = formatTime12h(now);
+        const dayStr = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        if (clockEl) clockEl.innerText = `${timeStr} • ${dayStr}`;
+      }
+      update();
+      setInterval(update, 1000);
+    }
+
+    // --- Authentication & Login Logic ---
+    function showLoginModal() {
+      document.getElementById('loginModal').classList.remove('hidden');
+    }
+
+    function closeLoginModal() {
+      document.getElementById('loginModal').classList.add('hidden');
+    }
+
+    function selectUserForLogin(empId) {
+      const user = users.find(u => u.id === empId || (empId === 'boss123' && u.isBoss));
+      if (!user) return;
+      
+      const idInput = document.getElementById('loginEmpId');
+      const pwInput = document.getElementById('loginPassword');
+      if (idInput) idInput.value = user.id;
+      if (pwInput) pwInput.value = user.password;
+    }
+
+    function handleLoginSubmit(e) {
+      e.preventDefault();
+      const empId = document.getElementById('loginEmpId').value.trim();
+      const pw = document.getElementById('loginPassword').value.trim();
+
+      const user = users.find(u => u.id.toLowerCase() === empId.toLowerCase() || (u.isBoss && (empId.toLowerCase() === 'boss123' || empId.toLowerCase() === 'boss-01')));
+      if (!user) {
+        alert("Employee ID not found. Please click your account button or check the ID.");
+        return;
+      }
+
+      const isValidPassword = (user.isBoss && (pw === user.password || pw === "1234" || pw === "boss123")) || (user.password === pw);
+
+      if (isValidPassword) {
+        currentUser = user;
+        localStorage.setItem(STORAGE_ACTIVE_USER, JSON.stringify(currentUser));
+        closeLoginModal();
+        renderApp();
+      } else {
+        alert("Incorrect password. Please try again.");
+      }
+    }
+
+    function handleSignOut() {
+      currentUser = null;
+      localStorage.removeItem(STORAGE_ACTIVE_USER);
+      if (shiftTimerInterval) clearInterval(shiftTimerInterval);
+      document.getElementById('profileDropdown').classList.add('hidden');
+      showLoginModal();
+    }
+
+    // --- UI Rendering ---
+    function renderApp() {
+      if (!currentUser) return;
+
+      document.getElementById('userPillName').innerText = currentUser.name;
+      document.getElementById('userPillRole').innerText = currentUser.isBoss ? "Boss" : "Employee";
+      document.getElementById('userAvatarPill').innerText = currentUser.name.charAt(0).toUpperCase();
+
+      document.getElementById('dropdownFullTitle').innerText = currentUser.name;
+      document.getElementById('dropdownSubRole').innerText = `${currentUser.role} (${currentUser.id})`;
+
+      // Restrict "Register Custom ID" option strictly to Boss
+      const regIdBtn = document.getElementById('btnRegisterCustomId');
+      if (regIdBtn) {
+        if (currentUser.isBoss) {
+          regIdBtn.classList.remove('hidden');
+          regIdBtn.classList.add('flex');
+        } else {
+          regIdBtn.classList.add('hidden');
+          regIdBtn.classList.remove('flex');
+        }
+      }
+
+      const switcher = document.getElementById('headerRoleSwitcherContainer');
+      if (currentUser.isBoss) {
+        switcher.classList.remove('hidden');
+        switcher.classList.add('flex');
+        currentViewMode = "boss";
+      } else {
+        switcher.classList.add('hidden');
+        switcher.classList.remove('flex');
+        currentViewMode = "staff";
+      }
+
+      switchViewMode(currentViewMode);
+      renderStaffView();
+      renderBossView();
+      renderStaff5DayLogs();
+      updateNotifications();
+    }
+
+    function switchViewMode(mode) {
+      currentViewMode = mode;
+      const staffWrapper = document.getElementById('staffViewWrapper');
+      const bossWrapper = document.getElementById('bossViewWrapper');
+      const btnStaff = document.getElementById('btnRoleStaff');
+      const btnBoss = document.getElementById('btnRoleBoss');
+
+      if (mode === 'boss' && currentUser && currentUser.isBoss) {
+        staffWrapper.classList.add('hidden');
+        bossWrapper.classList.remove('hidden');
+        btnBoss.className = "px-3.5 py-1.5 rounded-full text-xs font-bold transition-all text-white bg-slate-900 shadow-sm";
+        btnStaff.className = "px-3.5 py-1.5 rounded-full text-xs font-bold transition-all text-slate-600 hover:text-slate-900";
+        renderBossView();
+      } else {
+        bossWrapper.classList.add('hidden');
+        staffWrapper.classList.remove('hidden');
+        btnStaff.className = "px-3.5 py-1.5 rounded-full text-xs font-bold transition-all text-white bg-slate-900 shadow-sm";
+        btnBoss.className = "px-3.5 py-1.5 rounded-full text-xs font-bold transition-all text-slate-600 hover:text-slate-900";
+        renderStaffView();
+        renderStaff5DayLogs();
+      }
+    }
+
+    // --- Staff Attendance Logic ---
+    function getTodayUserLog(empId) {
+      const today = getTodayDateString();
+      return attendanceLogs.find(a => a.empId === empId && a.date === today);
+    }
+
+    function renderStaffView() {
+      if (!currentUser) return;
+
+      document.getElementById('cardStaffName').innerText = currentUser.name;
+      document.getElementById('cardStaffEmpIdBadge').innerText = currentUser.id;
+      document.getElementById('cardStaffRole').innerText = currentUser.role;
+
+      const log = getTodayUserLog(currentUser.id);
+      const isCheckedIn = log && log.isCheckedIn;
+
+      const statusPill = document.getElementById('dutyStatusPill');
+      const btnIn = document.getElementById('btnCheckIn');
+      const btnOut = document.getElementById('btnCheckOut');
+      const inTimeEl = document.getElementById('metricInTime');
+      const outTimeEl = document.getElementById('metricOutTime');
+      const shiftStatusEl = document.getElementById('metricShiftElapsed');
+
+      if (isCheckedIn) {
+        statusPill.className = "duty-pill-active px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2";
+        statusPill.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span><span>On Active Duty</span>`;
+        btnIn.disabled = true;
+        btnOut.disabled = false;
+        inTimeEl.innerText = log.checkInTime || "--:--";
+        outTimeEl.innerText = "--:--";
+        startShiftTimer(log.checkInTimestamp);
+      } else {
+        statusPill.className = "duty-pill-inactive px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2";
+        statusPill.innerHTML = `<span class="w-2 h-2 rounded-full bg-slate-400"></span><span>Checked Out</span>`;
+        btnIn.disabled = false;
+        btnOut.disabled = true;
+        inTimeEl.innerText = log ? log.checkInTime : "--:--";
+        outTimeEl.innerText = log && log.checkOutTime ? log.checkOutTime : "--:--";
+        if (shiftTimerInterval) clearInterval(shiftTimerInterval);
+        shiftStatusEl.innerText = log && log.totalMinutes ? `${Math.floor(log.totalMinutes / 60)}h ${log.totalMinutes % 60}m completed` : "0h 00m active duty";
+      }
+
+      renderStaffDeliverables();
+    }
+
+    function handleCheckIn() {
+      if (!currentUser) return;
+      const today = getTodayDateString();
+      let log = getTodayUserLog(currentUser.id);
+
+      const now = new Date();
+      const timeStr = formatTime12h(now);
+
+      if (!log) {
+        log = {
+          id: `att-${Date.now()}`,
+          empId: currentUser.id,
+          staffName: currentUser.name,
+          date: today,
+          dateFormatted: formatDateEnglish(now),
+          checkInTime: timeStr,
+          checkInTimestamp: now.getTime(),
+          checkOutTime: null,
+          isCheckedIn: true,
+          totalMinutes: 0
+        };
+        attendanceLogs.unshift(log);
+      } else {
+        log.isCheckedIn = true;
+        log.checkInTime = timeStr;
+        log.checkInTimestamp = now.getTime();
+        log.checkOutTime = null;
+        log.dateFormatted = formatDateEnglish(now);
+      }
+
+      localStorage.setItem(STORAGE_ATTENDANCE, JSON.stringify(attendanceLogs));
+      playChime();
+      renderStaffView();
+      renderStaff5DayLogs();
+      if (currentUser.isBoss) {
+        renderBossView();
+        renderBoss5DayLogs();
+      }
+    }
+
+    function handleCheckOut() {
+      if (!currentUser) return;
+      const log = getTodayUserLog(currentUser.id);
+      if (!log || !log.isCheckedIn) return;
+
+      const now = new Date();
+      log.isCheckedIn = false;
+      log.checkOutTime = formatTime12h(now);
+      
+      const elapsedMinutes = Math.max(1, Math.round((now.getTime() - log.checkInTimestamp) / 60000));
+      log.totalMinutes = (log.totalMinutes || 0) + elapsedMinutes;
+
+      localStorage.setItem(STORAGE_ATTENDANCE, JSON.stringify(attendanceLogs));
+      playChime();
+      renderStaffView();
+      renderStaff5DayLogs();
+      if (currentUser.isBoss) {
+        renderBossView();
+        renderBoss5DayLogs();
+      }
+    }
+
+    // --- 5-Day Attendance Log Renderer (English) ---
+    function getStaff5DayLogs(empId) {
+      return attendanceLogs
+        .filter(a => a.empId === empId)
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+        .slice(0, 5);
+    }
+
+    function renderAttendanceLogRowHtml(log, staffObj) {
+      const staffName = staffObj ? staffObj.name : (log.staffName || log.empId);
+      const formattedDate = log.dateFormatted || log.date;
+      const isLive = log.isCheckedIn;
+
+      let timeBadgeHtml = "";
+      if (isLive) {
+        timeBadgeHtml = `<span class="px-3 py-1 rounded-md text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200 shadow-2xs">In Progress</span>`;
+      } else if (log.totalMinutes > 0) {
+        const hrs = Math.floor(log.totalMinutes / 60);
+        const mins = log.totalMinutes % 60;
+        const hrsText = hrs > 0 ? ` (${hrs}h ${mins}m)` : '';
+        timeBadgeHtml = `<span class="font-mono text-slate-700 font-semibold text-xs">${log.totalMinutes} mins${hrsText}</span>`;
+      } else {
+        timeBadgeHtml = `<span class="text-slate-400 font-mono text-xs">—</span>`;
+      }
+
+      return `
+        <tr class="hover:bg-white/70 transition-colors">
+          <td class="py-3.5 px-4">
+            <div class="font-bold text-slate-800 text-xs sm:text-sm">${staffName}</div>
+            <div class="text-[11px] text-slate-500 font-medium mt-0.5">${formattedDate}</div>
+          </td>
+          <td class="py-3.5 px-4 text-center font-mono font-bold text-xs text-slate-700">
+            ${log.checkInTime || '—'}
+          </td>
+          <td class="py-3.5 px-4 text-center font-mono font-bold text-xs text-slate-700">
+            ${log.checkOutTime || '—'}
+          </td>
+          <td class="py-3.5 px-4 text-right">
+            ${timeBadgeHtml}
+          </td>
+        </tr>
+      `;
+    }
+
+    function renderStaff5DayLogs() {
+      if (!currentUser) return;
+      const tbody = document.getElementById('staff5DayTableBody');
+      if (!tbody) return;
+
+      const recentLogs = getStaff5DayLogs(currentUser.id);
+
+      if (recentLogs.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="4" class="py-6 text-center text-slate-400 text-xs">
+              No recent shift logs recorded yet.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = recentLogs.map(log => renderAttendanceLogRowHtml(log, currentUser)).join('');
+    }
+
+    function startShiftTimer(startTimestamp) {
+      if (shiftTimerInterval) clearInterval(shiftTimerInterval);
+      const shiftStatusEl = document.getElementById('metricShiftElapsed');
+
+      function update() {
+        const diffMs = Math.max(0, Date.now() - startTimestamp);
+        const mins = Math.floor(diffMs / 60000);
+        const hours = Math.floor(mins / 60);
+        const remMins = mins % 60;
+        if (shiftStatusEl) {
+          shiftStatusEl.innerText = `${hours}h ${String(remMins).padStart(2, '0')}m active duty`;
+        }
+      }
+      update();
+      shiftTimerInterval = setInterval(update, 30000);
+    }
+
+    // --- Deliverables Logic ---
+    function updateSliderText(val) {
+      document.getElementById('sliderValueText').innerText = `${val}%`;
+    }
+
+    function handleDeliverableSubmit(e) {
+      e.preventDefault();
+      if (!currentUser) return;
+
+      const category = document.getElementById('taskCategory').value;
+      const title = document.getElementById('taskTitle').value.trim();
+      const notes = document.getElementById('taskNotes').value.trim();
+      const progress = parseInt(document.getElementById('taskSlider').value) || 0;
+
+      const newTask = {
+        id: `del-${Date.now()}`,
+        empId: currentUser.id,
+        category,
+        title,
+        notes,
+        progress,
+        completed: progress === 100,
+        timestamp: formatTime12h(new Date()),
+        date: getTodayDateString()
+      };
+
+      deliverables.unshift(newTask);
+      localStorage.setItem(STORAGE_DELIVERABLES, JSON.stringify(deliverables));
+
+      document.getElementById('taskTitle').value = "";
+      document.getElementById('taskNotes').value = "";
+      document.getElementById('taskSlider').value = 25;
+      updateSliderText(25);
+
+      playChime();
+      renderStaffView();
+      renderStaff5DayLogs();
+      if (currentUser.isBoss) {
+        renderBossView();
+      }
+    }
+
+    function handleCheckOut() {
+      if (!currentUser) return;
+      const log = getTodayUserLog(currentUser.id);
+      if (!log || !log.isCheckedIn) return;
+
+      const now = new Date();
+      log.isCheckedIn = false;
+      log.checkOutTime = formatTime12h(now);
+      
+      const elapsedMinutes = Math.max(1, Math.round((now.getTime() - log.checkInTimestamp) / 60000));
+      log.totalMinutes = (log.totalMinutes || 0) + elapsedMinutes;
+
+      localStorage.setItem(STORAGE_ATTENDANCE, JSON.stringify(attendanceLogs));
+      playChime();
+      renderStaffView();
+      renderStaff5DayLogs();
+      if (currentUser.isBoss) {
+        renderBossView();
+      }
+    }
+
+    function renderStaffDeliverables() {
+      const container = document.getElementById('deliverablesListContainer');
+      const badge = document.getElementById('deliverableCountBadge');
+      const velocityPill = document.getElementById('metricVelocityPill');
+      const velocityPercent = document.getElementById('metricVelocityPercent');
+      if (!container || !currentUser) return;
+
+      const userTasks = deliverables.filter(d => d.empId === currentUser.id);
+      if (badge) badge.innerText = `${userTasks.length} Deliverable${userTasks.length === 1 ? '' : 's'}`;
+
+      const completedCount = userTasks.filter(t => t.progress >= 100).length;
+      const avgProgress = userTasks.length ? Math.round(userTasks.reduce((sum, t) => sum + t.progress, 0) / userTasks.length) : 0;
+      if (velocityPill) velocityPill.innerText = `${completedCount} Done`;
+      if (velocityPercent) velocityPercent.innerText = `${avgProgress}%`;
+
+      if (userTasks.length === 0) {
+        container.innerHTML = `
+          <div class="py-12 text-center text-slate-400">
+            <i class="fa-regular fa-clipboard text-3xl mb-2 text-slate-300"></i>
+            <p class="text-xs font-semibold">No deliverables logged today.</p>
+            <p class="text-[11px] text-slate-400">Use the form on the left to add your first work item.</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = userTasks.map(task => `
+        <div class="p-4 rounded-2xl bg-white/90 border border-slate-200/90 shadow-sm flex flex-col gap-2.5">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="text-[9px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-slate-900 text-white tracking-wider">${escapeHtml(task.category)}</span>
+              <span class="text-[10px] text-slate-400 font-medium">${task.timestamp || ''}</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <span class="text-xs font-mono font-bold ${task.progress >= 100 ? 'text-emerald-600' : 'text-rose-600'}">${task.progress}%</span>
+            </div>
+          </div>
+          <div>
+            <h4 class="text-xs font-bold text-slate-900 leading-snug">${escapeHtml(task.title)}</h4>
+            ${task.notes ? `<p class="text-[11px] text-slate-500 mt-1 leading-relaxed bg-slate-50/70 p-2 rounded-xl border border-slate-100">${escapeHtml(task.notes)}</p>` : ''}
+          </div>
+          <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+            <div class="h-full ${task.progress >= 100 ? 'bg-gradient-to-r from-emerald-500 to-emerald-600' : 'bg-gradient-to-r from-rose-500 to-rose-600'} transition-all duration-300" style="width: ${task.progress}%"></div>
+          </div>
+          <div class="flex items-center justify-between pt-1">
+            <div class="flex items-center gap-1.5">
+              <button onclick="adjustTaskProgress('${task.id}', -10)" class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700">-10%</button>
+              <button onclick="adjustTaskProgress('${task.id}', 10)" class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700">+10%</button>
+              <button onclick="adjustTaskProgress('${task.id}', 25)" class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700">+25%</button>
+            </div>
+            <div class="flex items-center gap-2">
+              <button onclick="toggleTaskCompleted('${task.id}')" class="px-3 py-1 rounded-full text-[11px] font-bold ${task.progress >= 100 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700 hover:bg-emerald-50 hover:text-emerald-700'} transition-all">
+                <i class="fa-solid fa-check text-[10px] mr-1"></i> ${task.progress >= 100 ? 'Done' : 'Mark Done'}
+              </button>
+              <button onclick="deleteDeliverable('${task.id}')" class="text-slate-400 hover:text-rose-600 text-xs px-1" title="Delete Task">
+                <i class="fa-regular fa-trash-can"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function adjustTaskProgress(taskId, delta) {
+      const task = deliverables.find(d => d.id === taskId);
+      if (!task) return;
+      task.progress = Math.min(100, Math.max(0, task.progress + delta));
+      task.completed = task.progress >= 100;
+      localStorage.setItem(STORAGE_DELIVERABLES, JSON.stringify(deliverables));
+      renderStaffView();
+      if (currentUser && currentUser.isBoss) renderBossView();
+    }
+
+    function toggleTaskCompleted(taskId) {
+      const task = deliverables.find(d => d.id === taskId);
+      if (!task) return;
+      task.progress = task.progress >= 100 ? 0 : 100;
+      task.completed = task.progress >= 100;
+      localStorage.setItem(STORAGE_DELIVERABLES, JSON.stringify(deliverables));
+      playChime();
+      renderStaffView();
+      if (currentUser && currentUser.isBoss) renderBossView();
+    }
+
+    function deleteDeliverable(taskId) {
+      deliverables = deliverables.filter(d => d.id !== taskId);
+      localStorage.setItem(STORAGE_DELIVERABLES, JSON.stringify(deliverables));
+      renderStaffView();
+      if (currentUser && currentUser.isBoss) renderBossView();
+    }
+
+    // --- Boss Radar Console Logic & Inspect Modal ---
+    function handleRadarSearch(query) {
+      radarSearchQuery = (query || "").trim().toLowerCase();
+      renderBossView();
+    }
+
+    function renderBossView() {
+      const staffList = users.filter(u => !u.isBoss);
+      const today = getTodayDateString();
+
+      // Top Metric Stat Cards
+      const totalStaffEl = document.getElementById('bossStatTotalStaff');
+      const activeDutyEl = document.getElementById('bossStatActiveDuty');
+      const inProgressEl = document.getElementById('bossStatInProgress');
+      const completedTodayEl = document.getElementById('bossStatCompletedToday');
+
+      if (totalStaffEl) totalStaffEl.innerText = `${staffList.length} Staff`;
+
+      let activeCount = 0;
+      staffList.forEach(s => {
+        const log = getTodayUserLog(s.id);
+        if (log && log.isCheckedIn) activeCount++;
+      });
+      if (activeDutyEl) activeDutyEl.innerText = `${activeCount} Active`;
+
+      const todayTasks = deliverables.filter(d => d.date === today);
+      const completedTasks = todayTasks.filter(d => d.progress >= 100);
+      const inProgTasks = todayTasks.filter(d => d.progress < 100);
+
+      if (inProgressEl) inProgressEl.innerText = `${inProgTasks.length} Tasks`;
+      if (completedTodayEl) completedTodayEl.innerText = `${completedTasks.length} Completed`;
+
+      // Radar Table Rows
+      const tbody = document.getElementById('bossRadarTableBody');
+      if (!tbody) return;
+
+      const filteredStaff = staffList.filter(s => {
+        if (!radarSearchQuery) return true;
+        return s.name.toLowerCase().includes(radarSearchQuery) ||
+               s.role.toLowerCase().includes(radarSearchQuery) ||
+               s.id.toLowerCase().includes(radarSearchQuery);
+      });
+
+      if (filteredStaff.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" class="py-8 text-center text-slate-400 text-xs">
+              No creative members match your search.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = filteredStaff.map(staff => {
+        const log = getTodayUserLog(staff.id);
+        const isPresent = log && log.isCheckedIn;
+        const checkIn = log && log.checkInTime ? log.checkInTime : '--:--';
+        const checkOut = log && log.checkOutTime ? log.checkOutTime : '--:--';
+
+        let shiftTimeText = '--';
+        if (isPresent) {
+          const diffMs = Math.max(0, Date.now() - log.checkInTimestamp);
+          const mins = Math.floor(diffMs / 60000);
+          const hrs = Math.floor(mins / 60);
+          const remM = mins % 60;
+          shiftTimeText = `${hrs}h ${String(remM).padStart(2, '0')}m live`;
+        } else if (log && log.totalMinutes > 0) {
+          const hrs = Math.floor(log.totalMinutes / 60);
+          const remM = log.totalMinutes % 60;
+          shiftTimeText = `${hrs}h ${String(remM).padStart(2, '0')}m`;
+        }
+
+        const staffTasks = deliverables.filter(d => d.empId === staff.id);
+        const compTasks = staffTasks.filter(d => d.progress >= 100).length;
+        const totalTasks = staffTasks.length;
+        const avgVelocity = totalTasks > 0 ? Math.round(staffTasks.reduce((acc, t) => acc + t.progress, 0) / totalTasks) : 0;
+
+        return `
+          <tr class="hover:bg-white/70 transition-colors">
+            <td class="py-3.5 px-4">
+              <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-full bg-slate-900 text-white font-bold flex items-center justify-center text-xs shadow-sm flex-shrink-0">
+                  ${staff.name.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <div class="font-bold text-slate-900 text-xs sm:text-sm">${escapeHtml(staff.name)}</div>
+                  <div class="text-[11px] text-slate-500 font-medium">${escapeHtml(staff.role)}</div>
+                </div>
+              </div>
+            </td>
+            <td class="py-3.5 px-4 text-center">
+              ${isPresent 
+                ? `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> In Office
+                   </span>` 
+                : `<span class="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold bg-rose-50 text-rose-600 border border-rose-200">
+                    Absent
+                   </span>`}
+            </td>
+            <td class="py-3.5 px-4 text-center font-mono font-bold text-xs text-slate-700">${checkIn}</td>
+            <td class="py-3.5 px-4 text-center font-mono font-bold text-xs text-slate-700">${checkOut}</td>
+            <td class="py-3.5 px-4 text-center font-mono font-bold text-xs ${isPresent ? 'text-rose-600' : 'text-slate-700'}">${shiftTimeText}</td>
+            <td class="py-3.5 px-4">
+              <div class="flex flex-col gap-1 w-44">
+                <div class="flex items-center justify-between text-[11px] font-bold">
+                  <span class="${avgVelocity >= 100 ? 'text-emerald-600 font-extrabold' : 'text-rose-600'}">${avgVelocity}%</span>
+                  <span class="text-slate-400 font-normal">${compTasks}/${totalTasks} tasks</span>
+                </div>
+                <div class="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                  <div class="h-full ${avgVelocity >= 100 ? 'bg-gradient-to-r from-emerald-500 to-emerald-600' : 'bg-gradient-to-r from-rose-500 to-rose-600'}" style="width: ${avgVelocity}%"></div>
+                </div>
+              </div>
+            </td>
+            <td class="py-3.5 px-4 text-right">
+              <button onclick="openInspectModal('${staff.id}')" class="px-3.5 py-1.5 rounded-full text-xs font-bold text-rose-600 hover:text-white hover:bg-rose-600 border border-rose-200 hover:border-transparent transition-all shadow-xs">
+                Inspect
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function openInspectModal(empId) {
+      const staff = users.find(u => u.id === empId);
+      if (!staff) return;
+
+      const titleEl = document.getElementById('inspectModalTitle');
+      const subEl = document.getElementById('inspectModalSubtitle');
+      const container = document.getElementById('inspectDeliverablesContainer');
+      const historyBody = document.getElementById('inspect5DayHistoryBody');
+
+      if (titleEl) titleEl.innerText = `${staff.name}'s Shift Deliverables`;
+      if (subEl) subEl.innerText = `${staff.role} • ID: ${staff.id}`;
+
+      const staffTasks = deliverables.filter(d => d.empId === empId);
+
+      if (container) {
+        if (staffTasks.length === 0) {
+          container.innerHTML = `
+            <div class="py-10 text-center text-slate-400">
+              <i class="fa-regular fa-clipboard text-2xl mb-1 text-slate-300"></i>
+              <p class="text-xs font-semibold">No deliverables recorded yet for today</p>
+            </div>
+          `;
+        } else {
+          container.innerHTML = staffTasks.map(task => `
+            <div class="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-sm flex flex-col gap-2">
+              <div class="flex items-center justify-between">
+                <span class="text-[9px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-slate-900 text-white tracking-wider">${escapeHtml(task.category)}</span>
+                <span class="text-xs font-mono font-bold ${task.progress >= 100 ? 'text-rose-600' : 'text-amber-600'}">${task.progress}%</span>
+              </div>
+              <h4 class="text-xs sm:text-sm font-bold text-slate-900 leading-snug">${escapeHtml(task.title)}</h4>
+              ${task.notes ? `<p class="text-[11px] text-slate-500 leading-relaxed">${escapeHtml(task.notes)}</p>` : ''}
+            </div>
+          `).join('');
+        }
+      }
+
+      if (historyBody) {
+        const logs = getStaff5DayLogs(empId);
+        if (logs.length === 0) {
+          historyBody.innerHTML = `<tr><td colspan="4" class="py-4 text-center text-slate-400 text-xs">No attendance records found.</td></tr>`;
+        } else {
+          historyBody.innerHTML = logs.map(l => {
+            const timeTxt = l.isCheckedIn ? '<span class="text-amber-600 font-bold">In Progress</span>' : (l.totalMinutes > 0 ? `${l.totalMinutes} mins` : '—');
+            return `
+              <tr>
+                <td class="py-2 px-3 font-semibold text-slate-700">${l.dateFormatted || l.date}</td>
+                <td class="py-2 px-3 text-center font-mono text-slate-600">${l.checkInTime || '—'}</td>
+                <td class="py-2 px-3 text-center font-mono text-slate-600">${l.checkOutTime || '—'}</td>
+                <td class="py-2 px-3 text-right font-mono">${timeTxt}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+      }
+
+      const modal = document.getElementById('inspectModal');
+      if (modal) modal.classList.remove('hidden');
+    }
+
+    function closeInspectModal() {
+      const modal = document.getElementById('inspectModal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    function handleInspectBackdropClick(e) {
+      if (e.target.id === 'inspectModal') {
+        closeInspectModal();
+      }
+    }
+
+    window.openInspectModal = openInspectModal;
+    window.closeInspectModal = closeInspectModal;
+    window.handleInspectBackdropClick = handleInspectBackdropClick;
+    window.adjustTaskProgress = adjustTaskProgress;
+    window.toggleTaskCompleted = toggleTaskCompleted;
+    window.deleteDeliverable = deleteDeliverable;
+    window.handleRadarSearch = handleRadarSearch;
+
+    // --- Boss Directives Modal ---
+    function openAssignDirectiveModal() {
+      const select = document.getElementById('assignTargetUserId');
+      const staffList = users.filter(u => !u.isBoss);
+      select.innerHTML = staffList.map(s => `<option value="${s.id}">${s.name} (${s.role})</option>`).join('');
+      document.getElementById('assignDirectiveModal').classList.remove('hidden');
+    }
+
+    function closeAssignDirectiveModal() {
+      document.getElementById('assignDirectiveModal').classList.add('hidden');
+    }
+
+    function handleAssignDirectiveSubmit(e) {
+      e.preventDefault();
+      const empId = document.getElementById('assignTargetUserId').value;
+      const category = document.getElementById('assignCategory').value;
+      const title = document.getElementById('assignTitle').value.trim();
+      const notes = document.getElementById('assignInstructions').value.trim();
+
+      const newTask = {
+        id: `del-${Date.now()}`,
+        empId,
+        category,
+        title: `[DIRECTOR DIRECTIVE] ${title}`,
+        notes,
+        progress: 0,
+        completed: false,
+        timestamp: formatTime12h(new Date()),
+        date: getTodayDateString()
+      };
+
+      deliverables.unshift(newTask);
+      localStorage.setItem(STORAGE_DELIVERABLES, JSON.stringify(deliverables));
+
+      closeAssignDirectiveModal();
+      playChime();
+      renderBossView();
+      updateNotifications();
+      alert("Job Directive successfully dispatched to employee!");
+    }
+
+    // --- Profile Editing Logic ---
+    function openProfileEditModal() {
+      if (!currentUser) return;
+      document.getElementById('editProfileEmpId').value = currentUser.id;
+      document.getElementById('editProfileName').value = currentUser.name;
+      document.getElementById('editProfileRole').value = currentUser.role;
+      document.getElementById('editProfilePassword').value = currentUser.password;
+      document.getElementById('profileEditModal').classList.remove('hidden');
+      document.getElementById('profileDropdown').classList.add('hidden');
+    }
+
+    function closeProfileEditModal() {
+      document.getElementById('profileEditModal').classList.add('hidden');
+    }
+
+    function handleProfileEditSubmit(e) {
+      e.preventDefault();
+      if (!currentUser) return;
+
+      const name = document.getElementById('editProfileName').value.trim();
+      const role = document.getElementById('editProfileRole').value.trim();
+      const password = document.getElementById('editProfilePassword').value.trim();
+
+      currentUser.name = name;
+      currentUser.role = role;
+      currentUser.password = password;
+
+      const userIndex = users.findIndex(u => u.id === currentUser.id);
+      if (userIndex !== -1) {
+        users[userIndex] = { ...currentUser };
+      }
+
+      localStorage.setItem(STORAGE_USERS, JSON.stringify(users));
+      localStorage.setItem(STORAGE_ACTIVE_USER, JSON.stringify(currentUser));
+
+      closeProfileEditModal();
+      renderApp();
+      alert("Profile updated successfully!");
+    }
+
+    // --- Register Custom ID Logic ---
+    function openRegisterUserModal() {
+      document.getElementById('registerUserModal').classList.remove('hidden');
+      document.getElementById('profileDropdown').classList.add('hidden');
+    }
+
+    function closeRegisterUserModal() {
+      document.getElementById('registerUserModal').classList.add('hidden');
+    }
+
+    function handleRegisterUserSubmit(e) {
+      e.preventDefault();
+      const id = document.getElementById('regEmpId').value.trim().toUpperCase();
+      const name = document.getElementById('regName').value.trim();
+      const role = document.getElementById('regRole').value.trim();
+      const password = document.getElementById('regPassword').value.trim();
+
+      if (users.some(u => u.id.toLowerCase() === id.toLowerCase())) {
+        alert("This Employee ID already exists. Please choose a unique ID.");
+        return;
+      }
+
+      const newUser = { id, name, role, isBoss: false, password };
+      users.push(newUser);
+      localStorage.setItem(STORAGE_USERS, JSON.stringify(users));
+
+      closeRegisterUserModal();
+      alert(`User ${name} (${id}) registered successfully!`);
+    }
+
+    // --- Permanent Logo Customizer ---
+    function openPermanentLogoModal() {
+      document.getElementById('permanentLogoModal').classList.remove('hidden');
+      document.getElementById('profileDropdown').classList.add('hidden');
+    }
+
+    function closePermanentLogoModal() {
+      document.getElementById('permanentLogoModal').classList.add('hidden');
+    }
+
+    function handleLogoFileUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        const dataUrl = event.target.result;
+        setStudioLogo(dataUrl);
+        closePermanentLogoModal();
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function saveLogoFromUrlInput() {
+      const url = document.getElementById('logoUrlInput').value.trim();
+      if (!url) return;
+      setStudioLogo(url);
+      closePermanentLogoModal();
+    }
+
+    function setStudioLogo(src) {
+      localStorage.setItem(STORAGE_LOGO, src);
+      applySavedLogo();
+    }
+
+    function resetDefaultLogo() {
+      localStorage.removeItem(STORAGE_LOGO);
+      applySavedLogo();
+      closePermanentLogoModal();
+    }
+
+    function applySavedLogo() {
+      const savedLogo = localStorage.getItem(STORAGE_LOGO);
+      const containers = [
+        document.getElementById('headerLogoContainer'),
+        document.getElementById('loginLogoContainer')
+      ];
+
+      containers.forEach(box => {
+        if (!box) return;
+        if (savedLogo) {
+          box.innerHTML = `<img src="${savedLogo}" alt="NANDAN" class="w-full h-full object-cover rounded-[22%]">`;
+        } else {
+          box.innerHTML = `<span class="text-white font-extrabold text-[10px] tracking-wider select-none">NANDAN</span>`;
+        }
+      });
+    }
+
+    // --- Download Work Reports Modal Logic ---
+    function openDownloadReportModal() {
+      const modal = document.getElementById('downloadReportModal');
+      const select = document.getElementById('exportFilterMemberSelect');
+      
+      const staffList = users.filter(u => !u.isBoss);
+      select.innerHTML = `<option value="ALL">All Team Members (Complete Studio)</option>` + 
+        staffList.map(s => `<option value="${s.id}">${s.name} (${s.role})</option>`).join('');
+
+      selectExportTimeframe('daily');
+      if (modal) modal.classList.remove('hidden');
+    }
+
+    function closeDownloadReportModal() {
+      const modal = document.getElementById('downloadReportModal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    function handleDownloadReportBackdropClick(e) {
+      if (e.target.id === 'downloadReportModal') {
+        closeDownloadReportModal();
+      }
+    }
+
+    function selectExportTimeframe(timeframe) {
+      selectedExportTimeframe = timeframe;
+      const tfButtons = ['daily', 'weekly', 'monthly'];
+      
+      tfButtons.forEach(tf => {
+        const btn = document.getElementById(`tfBtn-${tf}`);
+        if (!btn) return;
+        if (tf === timeframe) {
+          btn.className = "py-2.5 rounded-2xl bg-slate-900 text-white font-bold text-xs shadow-sm transition-all text-center";
+        } else {
+          btn.className = "py-2.5 rounded-2xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/90 font-bold text-xs shadow-xs transition-all text-center";
+        }
+      });
+    }
+
+    function executeExportReportCSV() {
+      const filterMember = document.getElementById('exportFilterMemberSelect').value;
+      const today = getTodayDateString();
+
+      let targetUsers = users.filter(u => !u.isBoss);
+      if (filterMember !== 'ALL') {
+        targetUsers = targetUsers.filter(u => u.id === filterMember);
+      }
+
+      let targetTasks = deliverables;
+      if (selectedExportTimeframe === 'daily') {
+        targetTasks = deliverables.filter(d => d.date === today);
+      } else if (selectedExportTimeframe === 'weekly') {
+        const oneWeekAgo = new Date();
+        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+        targetTasks = deliverables.filter(d => new Date(d.date) >= oneWeekAgo);
+      }
+
+      let csv = "Employee Name,Employee ID,Designation,Period,Check In,Check Out,Total Minutes,Total Hours,Days Absent,Tasks Count,Completed Tasks,Deliverables Breakdown\n";
+
+      targetUsers.forEach(staff => {
+        const stats = calculateStaffPeriodStats(staff.id, selectedExportTimeframe);
+        const tasksSummary = stats.tasks.map(t => `${t.title} (${t.progress}%)`).join('; ') || 'No tasks';
+        const cleanTasks = tasksSummary.replace(/"/g, '""');
+
+        csv += `"${staff.name}","${staff.id}","${staff.role}","${selectedExportTimeframe.toUpperCase()}","${stats.checkIn}","${stats.checkOut}","${stats.totalMinutes}","${(stats.totalMinutes/60).toFixed(1)}","${stats.daysAbsent}","${stats.totalTasks}","${stats.completedTasks}","${cleanTasks}"\n`;
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `NANDAN_Studio_${selectedExportTimeframe.toUpperCase()}_Staff_Report_${today}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      closeDownloadReportModal();
+      playChime();
+    }
+
+    // Helper: calculate total minutes, check in/out, tasks, and absent days in timeframe
+    function calculateStaffPeriodStats(empId, timeframe) {
+      const today = getTodayDateString();
+      const numDays = timeframe === 'daily' ? 1 : (timeframe === 'weekly' ? 7 : 30);
+      const now = new Date();
+
+      // Gather target dates
+      const targetDates = [];
+      for (let i = 0; i < numDays; i++) {
+        const d = new Date(now);
+        d.setDate(now.getDate() - i);
+        targetDates.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+      }
+
+      const relevantLogs = attendanceLogs.filter(a => a.empId === empId && targetDates.includes(a.date));
+      const todayLog = relevantLogs.find(a => a.date === today);
+
+      // Present days vs Absent days
+      const attendedDates = new Set(relevantLogs.map(l => l.date));
+      let absentCount = 0;
+      targetDates.forEach(dateStr => {
+        if (!attendedDates.has(dateStr)) {
+          absentCount++;
+        }
+      });
+
+      // Total minutes
+      const totalMins = relevantLogs.reduce((acc, l) => acc + (l.totalMinutes || 0), 0);
+
+      // Tasks
+      const relevantTasks = deliverables.filter(d => d.empId === empId && targetDates.includes(d.date));
+      const completedCount = relevantTasks.filter(t => t.progress >= 100).length;
+
+      return {
+        checkIn: todayLog ? (todayLog.checkInTime || '--:--') : '--:--',
+        checkOut: todayLog ? (todayLog.checkOutTime || '--:--') : '--:--',
+        totalMinutes: totalMins,
+        daysAbsent: absentCount,
+        totalTasks: relevantTasks.length,
+        completedTasks: completedCount,
+        tasks: relevantTasks
+      };
+    }
+
+    // Professional PDF Generation and Native Print Trigger
+    function generateAndPrintPDFReport() {
+      const filterMember = document.getElementById('exportFilterMemberSelect').value;
+      const today = getTodayDateString();
+      const timeframeTitle = selectedExportTimeframe.charAt(0).toUpperCase() + selectedExportTimeframe.slice(1);
+
+      let targetUsers = users.filter(u => !u.isBoss);
+      if (filterMember !== 'ALL') {
+        targetUsers = targetUsers.filter(u => u.id === filterMember);
+      }
+
+      const savedLogo = localStorage.getItem(STORAGE_LOGO);
+      const logoHtml = savedLogo 
+        ? `<img src="${savedLogo}" style="width:48px; height:48px; border-radius:10px; object-fit:cover;">`
+        : `<div style="width:48px; height:48px; border-radius:10px; background:#e11d48; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:11px;">NANDAN</div>`;
+
+      // Build rows for each staff
+      const staffCardsHtml = targetUsers.map(staff => {
+        const stats = calculateStaffPeriodStats(staff.id, selectedExportTimeframe);
+        const hours = Math.floor(stats.totalMinutes / 60);
+        const mins = stats.totalMinutes % 60;
+        const formattedTime = `${stats.totalMinutes} mins (${hours}h ${mins}m)`;
+
+        const taskRowsHtml = stats.tasks.length > 0 ? stats.tasks.map((t, idx) => `
+          <tr style="border-bottom: 1px solid #f1f5f9; font-size: 11px;">
+            <td style="padding: 6px 10px; color: #64748b; width: 25px;">${idx+1}.</td>
+            <td style="padding: 6px 10px; font-weight: 600; color: #0f172a;">${escapeHtml(t.title)}</td>
+            <td style="padding: 6px 10px; color: #475569;"><span style="background:#0f172a; color:#fff; padding:2px 6px; border-radius:4px; font-size:9px; font-weight:bold;">${escapeHtml(t.category)}</span></td>
+            <td style="padding: 6px 10px; text-align: center; font-weight: bold; color: ${t.progress >= 100 ? '#059669' : '#e11d48'};">${t.progress}%</td>
+            <td style="padding: 6px 10px; color: #64748b; font-size: 10px;">${escapeHtml(t.notes || '—')}</td>
+          </tr>
+        `).join('') : `<tr><td colspan="5" style="padding: 10px; text-align: center; color: #94a3b8; font-size: 11px; font-style: italic;">No specific deliverable tasks logged for this timeframe</td></tr>`;
+
+        return `
+          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; margin-bottom: 20px; padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); page-break-inside: avoid;">
+            <!-- Staff Header -->
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #f1f5f9; padding-bottom: 12px; margin-bottom: 14px;">
+              <div>
+                <h3 style="margin: 0; font-size: 15px; font-weight: 800; color: #0f172a;">${escapeHtml(staff.name)}</h3>
+                <p style="margin: 3px 0 0; font-size: 11px; color: #64748b; font-weight: 600;">${escapeHtml(staff.role)} &bull; <span style="font-family: monospace; color:#0f172a; background:#f1f5f9; padding: 1px 5px; border-radius:4px;">${staff.id}</span></p>
+              </div>
+              <div style="text-align: right;">
+                <span style="display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 10px; font-weight: 800; ${stats.daysAbsent === 0 ? 'background:#ecfdf5; color:#059669; border:1px solid #a7f3d0;' : 'background:#fff1f2; color:#e11d48; border:1px solid #fecdd3;'}">
+                  ${stats.daysAbsent === 0 ? '100% Attendance' : `${stats.daysAbsent} Days Absent`}
+                </span>
+              </div>
+            </div>
+
+            <!-- Key Metrics Table / Grid -->
+            <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 16px;">
+              <div style="background: #f8fafc; padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                <div style="font-size: 9px; font-weight: 800; color: #94a3b8; text-transform: uppercase;">Check In</div>
+                <div style="font-size: 12px; font-weight: 700; color: #1e293b; font-family: monospace; margin-top: 2px;">${stats.checkIn}</div>
+              </div>
+              <div style="background: #f8fafc; padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                <div style="font-size: 9px; font-weight: 800; color: #94a3b8; text-transform: uppercase;">Check Out</div>
+                <div style="font-size: 12px; font-weight: 700; color: #1e293b; font-family: monospace; margin-top: 2px;">${stats.checkOut}</div>
+              </div>
+              <div style="background: #f8fafc; padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                <div style="font-size: 9px; font-weight: 800; color: #94a3b8; text-transform: uppercase;">Total Minutes</div>
+                <div style="font-size: 12px; font-weight: 800; color: #e11d48; font-family: monospace; margin-top: 2px;">${formattedTime}</div>
+              </div>
+              <div style="background: #f8fafc; padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                <div style="font-size: 9px; font-weight: 800; color: #94a3b8; text-transform: uppercase;">Work Updates</div>
+                <div style="font-size: 12px; font-weight: 800; color: #0f172a; margin-top: 2px;">${stats.completedTasks}/${stats.totalTasks} Tasks</div>
+              </div>
+              <div style="background: #f8fafc; padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                <div style="font-size: 9px; font-weight: 800; color: #94a3b8; text-transform: uppercase;">Absent Status</div>
+                <div style="font-size: 12px; font-weight: 800; color: ${stats.daysAbsent > 0 ? '#e11d48' : '#059669'}; margin-top: 2px;">${stats.daysAbsent} Day${stats.daysAbsent === 1 ? '' : 's'}</div>
+              </div>
+            </div>
+
+            <!-- Deliverables Task Log -->
+            <div style="margin-top: 10px;">
+              <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px;">Tasks & Project Deliverables Breakdown:</div>
+              <table style="width: 100%; border-collapse: collapse; text-align: left; background: #fafafa; border: 1px solid #f1f5f9; border-radius: 6px;">
+                <thead>
+                  <tr style="background: #f1f5f9; color: #475569; font-size: 9px; text-transform: uppercase; font-weight: bold;">
+                    <th style="padding: 6px 10px;">#</th>
+                    <th style="padding: 6px 10px;">Task Title</th>
+                    <th style="padding: 6px 10px;">Category</th>
+                    <th style="padding: 6px 10px; text-align: center;">Completion</th>
+                    <th style="padding: 6px 10px;">Notes / Review</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${taskRowsHtml}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      const printHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>NANDAN Studio - Staff Performance Report (${timeframeTitle})</title>
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+            @page {
+              size: A4 portrait;
+              margin: 15mm;
+            }
+            body {
+              font-family: 'Inter', -apple-system, sans-serif;
+              color: #0f172a;
+              background: #fff;
+              margin: 0;
+              padding: 0;
+            }
+            @media print {
+              .no-print { display: none !important; }
+              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            }
+          </style>
+        </head>
+        <body>
+          <!-- Printable Header -->
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0f172a; padding-bottom: 16px; margin-bottom: 20px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              ${logoHtml}
+              <div>
+                <h1 style="margin: 0; font-size: 18px; font-weight: 800; letter-spacing: -0.5px;">NANDAN STUDIO</h1>
+                <p style="margin: 2px 0 0; font-size: 11px; color: #64748b; font-weight: 600;">Broadcast & Creative Media &bull; Staff Performance & Attendance Audit</p>
+              </div>
+            </div>
+            <div style="text-align: right;">
+              <div style="background: #0f172a; color: #fff; font-size: 10px; font-weight: 800; padding: 4px 10px; border-radius: 6px; display: inline-block;">
+                ${timeframeTitle.toUpperCase()} REPORT
+              </div>
+              <div style="font-size: 10px; color: #64748b; font-weight: 600; margin-top: 4px;">Generated: ${new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</div>
+            </div>
+          </div>
+
+          <!-- Executive Summary Callout -->
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 16px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; font-size: 11px;">
+            <div>
+              <span style="font-weight: 800; color: #0f172a;">REPORT SCOPE:</span>
+              <span style="color: #475569; margin-left: 5px;">${filterMember === 'ALL' ? 'Complete Creative Studio Team' : 'Individual Staff Member'}</span>
+            </div>
+            <div>
+              <span style="font-weight: 800; color: #0f172a;">TIMEFRAME:</span>
+              <span style="color: #e11d48; font-weight: 700; margin-left: 5px;">${timeframeTitle} Review</span>
+            </div>
+            <div>
+              <span style="font-weight: 800; color: #0f172a;">DIRECTOR:</span>
+              <span style="color: #475569; margin-left: 5px;">Nil Utpal</span>
+            </div>
+          </div>
+
+          <!-- Staff Data List -->
+          <div>
+            ${staffCardsHtml}
+          </div>
+
+          <!-- Signoff / Verification Footer -->
+          <div style="margin-top: 30px; padding-top: 15px; border-top: 1px dashed #cbd5e1; display: flex; justify-content: space-between; align-items: flex-end; font-size: 10px; color: #64748b;">
+            <div>
+              <p style="margin: 0; font-weight: 600;">NANDAN Studio Performance Intelligence Engine</p>
+              <p style="margin: 2px 0 0;">This document is an authentic summary of shift attendance logs and work deliverables.</p>
+            </div>
+            <div style="text-align: center; width: 180px;">
+              <div style="border-bottom: 1px solid #0f172a; margin-bottom: 4px; height: 35px;"></div>
+              <div style="font-weight: 800; color: #0f172a;">Director's Signature</div>
+              <div style="color: #94a3b8; font-size: 9px;">Creative Management</div>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      // Open in printable popup window so user can directly Save as PDF
+      const printWindow = window.open('', '_blank', 'width=950,height=800');
+      if (printWindow) {
+        printWindow.document.open();
+        printWindow.document.write(printHtml);
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => {
+          printWindow.print();
+        }, 350);
+      } else {
+        alert("Please allow popup windows in your browser to download/print the PDF report.");
+      }
+
+      closeDownloadReportModal();
+      playChime();
+    }
+
+    window.openDownloadReportModal = openDownloadReportModal;
+    window.closeDownloadReportModal = closeDownloadReportModal;
+    window.handleDownloadReportBackdropClick = handleDownloadReportBackdropClick;
+    window.selectExportTimeframe = selectExportTimeframe;
+    window.executeExportReportCSV = executeExportReportCSV;
+    window.generateAndPrintPDFReport = generateAndPrintPDFReport;
+
+    // --- Notifications ---
+    function toggleProfileDropdown() {
+      const el = document.getElementById('profileDropdown');
+      el.classList.toggle('hidden');
+      document.getElementById('notificationDropdown').classList.add('hidden');
+    }
+
+    function toggleNotificationDropdown() {
+      const panel = document.getElementById('notificationDropdown');
+      panel.classList.toggle('hidden');
+      document.getElementById('profileDropdown').classList.add('hidden');
+      if (!panel.classList.contains('hidden')) {
+        updateNotifications();
+      }
+    }
+
+    function updateNotifications() {
+      if (!currentUser) return;
+      const listContainer = document.getElementById('notificationsList');
+      const badge = document.getElementById('bellBadge');
+      const unreadPill = document.getElementById('notifUnreadPill');
+      const today = getTodayDateString();
+
+      const notifs = [];
+
+      deliverables.forEach(task => {
+        if (task.title.includes('[DIRECTOR DIRECTIVE]')) {
+          if (currentUser.isBoss || task.empId === currentUser.id) {
+            const assignedStaff = users.find(u => u.id === task.empId);
+            notifs.push({
+              id: `notif-${task.id}`,
+              title: currentUser.isBoss 
+                ? `Directive to ${assignedStaff ? assignedStaff.name : task.empId}`
+                : `New Director Directive Assigned`,
+              desc: task.title.replace('[DIRECTOR DIRECTIVE]', '').trim(),
+              time: task.timestamp || 'Today',
+              icon: 'fa-bullhorn',
+              iconBg: 'bg-rose-50 text-rose-600 border-rose-200'
+            });
+          }
+        }
+      });
+
+      const userLog = getTodayUserLog(currentUser.id);
+      if (userLog && userLog.isCheckedIn) {
+        notifs.push({
+          id: `notif-checkin-${currentUser.id}-${today}`,
+          title: 'Shift Active',
+          desc: `You checked in at ${userLog.checkInTime}. Workflow is running.`,
+          time: userLog.checkInTime,
+          icon: 'fa-circle-check',
+          iconBg: 'bg-emerald-50 text-emerald-600 border-emerald-200'
+        });
+      }
+
+      const unreadCount = notifs.filter(n => !readNotificationIds.includes(n.id)).length;
+      if (unreadCount > 0) {
+        badge.classList.remove('hidden');
+        badge.innerText = unreadCount;
+        unreadPill.innerText = `${unreadCount} new`;
+      } else {
+        badge.classList.add('hidden');
+        unreadPill.innerText = '0 new';
+      }
+
+      if (notifs.length === 0) {
+        listContainer.innerHTML = `
+          <div class="py-6 text-center text-slate-400">
+            <i class="fa-regular fa-bell-slash text-2xl mb-1 text-slate-300"></i>
+            <p class="text-xs font-semibold">No notifications right now</p>
+          </div>
+        `;
+        return;
+      }
+
+      listContainer.innerHTML = notifs.map(n => {
+        const isRead = readNotificationIds.includes(n.id);
+        return `
+          <div onclick="markNotificationSingleRead('${n.id}')" class="p-2.5 rounded-xl border ${isRead ? 'bg-slate-50/60 border-slate-100 opacity-70' : 'bg-white border-slate-200/90 shadow-sm'} flex items-start gap-2.5 transition-all cursor-pointer hover:bg-slate-50">
+            <div class="w-7 h-7 rounded-lg ${n.iconBg} border flex items-center justify-center flex-shrink-0 text-xs shadow-xs mt-0.5">
+              <i class="fa-solid ${n.icon}"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center justify-between">
+                <h5 class="text-[11px] font-bold text-slate-900 truncate">${escapeHtml(n.title)}</h5>
+                <span class="text-[9px] text-slate-400 font-medium ml-1 flex-shrink-0">${n.time}</span>
+              </div>
+              <p class="text-[10px] text-slate-500 font-medium line-clamp-2 mt-0.5">${escapeHtml(n.desc)}</p>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function markAllNotificationsAsRead() {
+      const allNotifEls = document.querySelectorAll('#notificationsList [onclick]');
+      allNotifEls.forEach(el => {
+        const match = el.getAttribute('onclick').match(/'([^']+)'/);
+        if (match && !readNotificationIds.includes(match[1])) {
+          readNotificationIds.push(match[1]);
+        }
+      });
+      localStorage.setItem(STORAGE_READ_NOTIFS, JSON.stringify(readNotificationIds));
+      updateNotifications();
+    }
+
+    function markNotificationSingleRead(id) {
+      if (!readNotificationIds.includes(id)) {
+        readNotificationIds.push(id);
+        localStorage.setItem(STORAGE_READ_NOTIFS, JSON.stringify(readNotificationIds));
+        updateNotifications();
+      }
+    }
+
+    document.addEventListener('click', (e) => {
+      const notifBtn = e.target.closest('button[onclick="toggleNotificationDropdown()"]');
+      const notifPanel = e.target.closest('#notificationDropdown');
+      if (!notifBtn && !notifPanel) {
+        const el = document.getElementById('notificationDropdown');
+        if (el) el.classList.add('hidden');
+      }
+
+      const profileBtn = e.target.closest('button[onclick="toggleProfileDropdown()"]');
+      const profileDropdown = e.target.closest('#profileDropdown');
+      if (!profileBtn && !profileDropdown) {
+        const el = document.getElementById('profileDropdown');
+        if (el) el.classList.add('hidden');
+      }
+    });
+
+    function playChime() {
+      try {
+        const audio = document.getElementById('glassChime');
+        if (audio) {
+          audio.currentTime = 0;
+          audio.play().catch(() => {});
+        }
+      } catch(e) {}
+    }
+
+    function escapeHtml(text) {
+      if (!text) return "";
+      return text.replace(/[&<>"']/g, function(m) {
+        return {
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#039;'
+        }[m];
+      });
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initData();
+      startLiveClock();
+      applySavedLogo();
+      
+      if (!currentUser) {
+        showLoginModal();
+      } else {
+        renderApp();
+      }
+    });
+  </script>
+</body>
+</html>
