@@ -50,12 +50,13 @@ export function generateInitialAttendance(): AttendanceLog[] {
     const isFirstActive = staffIdx === 0;
 
     const mockShifts = [
-      { daysAgo: 0, in: isFirstActive ? "03:14 PM" : "09:30 AM", out: isFirstActive ? null : "06:15 PM", mins: isFirstActive ? 0 : 525, inProg: isFirstActive },
+      { daysAgo: 0, in: isFirstActive ? "03:14 PM" : null, out: null, mins: 0, inProg: isFirstActive },
       { daysAgo: 1, in: "05:52 PM", out: "08:00 AM", mins: 607, inProg: false },
       { daysAgo: 2, in: "02:42 PM", out: "10:12 PM", mins: 450, inProg: false },
       { daysAgo: 3, in: "03:09 PM", out: "11:29 PM", mins: 500, inProg: false },
       { daysAgo: 4, in: "12:23 PM", out: "08:28 PM", mins: 485, inProg: false },
-      { daysAgo: 5, in: "11:53 AM", out: "08:35 PM", mins: 522, inProg: false }
+      { daysAgo: 5, in: "11:53 AM", out: "08:35 PM", mins: 522, inProg: false },
+      { daysAgo: 6, in: "10:15 AM", out: "06:45 PM", mins: 510, inProg: false }
     ];
 
     mockShifts.forEach(shift => {

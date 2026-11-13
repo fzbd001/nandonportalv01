@@ -40,7 +40,11 @@ export const StaffView: React.FC<StaffViewProps> = ({
       if (todayLog && todayLog.totalMinutes > 0) {
         const hrs = Math.floor(todayLog.totalMinutes / 60);
         const mins = todayLog.totalMinutes % 60;
-        setActiveDurationText(`${hrs}h ${String(mins).padStart(2, '0')}m completed`);
+        if (hrs > 0) {
+          setActiveDurationText(`${hrs}h ${String(mins).padStart(2, '0')}m completed`);
+        } else {
+          setActiveDurationText(`${mins} min completed`);
+        }
       } else {
         setActiveDurationText('0h 00m active duty');
       }
@@ -52,11 +56,15 @@ export const StaffView: React.FC<StaffViewProps> = ({
       const totalMins = Math.floor(diffMs / 60000);
       const hours = Math.floor(totalMins / 60);
       const remMins = totalMins % 60;
-      setActiveDurationText(`${hours}h ${String(remMins).padStart(2, '0')}m active duty`);
+      if (hours > 0) {
+        setActiveDurationText(`${hours}h ${String(remMins).padStart(2, '0')}m active duty`);
+      } else {
+        setActiveDurationText(`${remMins} min active duty`);
+      }
     };
 
     updateTimer();
-    const interval = setInterval(updateTimer, 10000);
+    const interval = setInterval(updateTimer, 1000);
     return () => clearInterval(interval);
   }, [isCheckedIn, todayLog]);
 
@@ -252,7 +260,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
         </div>
 
         {/* Right Column: Today's Deliverables List */}
-        <div className="lg:col-span-7 glass-panel rounded-3xl p-5 sm:p-6 flex flex-col">
+        <div id="todays-deliverables-section" className="lg:col-span-7 glass-panel rounded-3xl p-5 sm:p-6 flex flex-col transition-all duration-300">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-base sm:text-lg font-extrabold text-slate-900">Today's Deliverables</h3>
@@ -274,6 +282,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
               userTasks.map((task) => (
                 <div
                   key={task.id}
+                  id={`deliverable-${task.id}`}
                   className="p-4 rounded-2xl bg-white/90 border border-slate-200/90 shadow-sm flex flex-col gap-2.5 transition-all hover:shadow"
                 >
                   <div className="flex items-center justify-between">

@@ -39,6 +39,7 @@ export interface NotificationItem {
   icon: string;
   iconBg: string;
   isRead?: boolean;
+  taskId?: string;
 }
 
 export type ExportTimeframe = 'daily' | 'weekly' | 'monthly';

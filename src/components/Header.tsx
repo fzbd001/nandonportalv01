@@ -15,6 +15,7 @@ interface HeaderProps {
   readNotifIds: string[];
   onMarkAllRead: () => void;
   onMarkSingleRead: (id: string) => void;
+  onNotificationClick: (item: NotificationItem) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -29,7 +30,8 @@ export const Header: React.FC<HeaderProps> = ({
   notifications,
   readNotifIds,
   onMarkAllRead,
-  onMarkSingleRead
+  onMarkSingleRead,
+  onNotificationClick
 }) => {
   const [clockString, setClockString] = useState('');
   const [isNotifOpen, setIsNotifOpen] = useState(false);
@@ -62,7 +64,14 @@ export const Header: React.FC<HeaderProps> = ({
     return () => document.removeEventListener('click', handleClickOutside);
   }, []);
 
-  const unreadCount = notifications.filter(n => !readNotifIds.includes(n.id)).length;
+  const unreadNotifications = notifications.filter(n => !readNotifIds.includes(n.id));
+  const readNotifications = notifications.filter(n => readNotifIds.includes(n.id));
+  // Keep all unread notifications + at most 3 latest read notifications (older ones are pruned)
+  const visibleNotifications = [
+    ...unreadNotifications,
+    ...readNotifications.slice(0, 3)
+  ];
+  const unreadCount = unreadNotifications.length;
 
   return (
     <header className="glass-panel w-full max-w-7xl mx-auto rounded-3xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-4 mb-6 z-20 relative">
@@ -162,33 +171,47 @@ export const Header: React.FC<HeaderProps> = ({
                 )}
               </div>
               <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                {notifications.length === 0 ? (
+                {visibleNotifications.length === 0 ? (
                   <div className="py-6 text-center text-slate-400">
                     <i className="fa-regular fa-bell-slash text-2xl mb-1 text-slate-300"></i>
                     <p className="text-xs font-semibold">No notifications right now</p>
                   </div>
                 ) : (
-                  notifications.map(n => {
+                  visibleNotifications.map(n => {
                     const isRead = readNotifIds.includes(n.id);
                     return (
                       <div
                         key={n.id}
-                        onClick={() => onMarkSingleRead(n.id)}
+                        onClick={() => {
+                          setIsNotifOpen(false);
+                          onNotificationClick(n);
+                        }}
                         className={`p-2.5 rounded-xl border ${
                           isRead
                             ? 'bg-slate-50/60 border-slate-100 opacity-70'
-                            : 'bg-white border-slate-200/90 shadow-sm'
-                        } flex items-start gap-2.5 transition-all cursor-pointer hover:bg-slate-50`}
+                            : 'bg-white border-rose-200 shadow-sm ring-1 ring-rose-500/10'
+                        } flex items-start gap-2.5 transition-all cursor-pointer hover:bg-slate-50 hover:border-slate-300 hover:shadow-md group`}
+                        title="Click to view in Today's Deliverables"
                       >
-                        <div className={`w-7 h-7 rounded-lg ${n.iconBg} border flex items-center justify-center flex-shrink-0 text-xs shadow-xs mt-0.5`}>
+                        <div className={`w-7 h-7 rounded-lg ${n.iconBg} border flex items-center justify-center flex-shrink-0 text-xs shadow-xs mt-0.5 group-hover:scale-105 transition-transform`}>
                           <i className={`fa-solid ${n.icon}`}></i>
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between">
-                            <h5 className="text-[11px] font-bold text-slate-900 truncate">{n.title}</h5>
+                            <h5 className="text-[11px] font-bold text-slate-900 truncate flex items-center gap-1.5">
+                              {!isRead && (
+                                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 flex-shrink-0 animate-pulse"></span>
+                              )}
+                              <span className="truncate">{n.title}</span>
+                            </h5>
                             <span className="text-[9px] text-slate-400 font-medium ml-1 flex-shrink-0">{n.time}</span>
                           </div>
                           <p className="text-[10px] text-slate-500 font-medium line-clamp-2 mt-0.5">{n.desc}</p>
+                          <div className="flex items-center justify-end mt-1 text-[9px] font-bold text-rose-600 opacity-80 group-hover:opacity-100 transition-opacity">
+                            <span className="flex items-center gap-1">
+                              View in Deliverables <i className="fa-solid fa-arrow-right text-[8px]"></i>
+                            </span>
+                          </div>
                         </div>
                       </div>
                     );

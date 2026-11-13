@@ -115,7 +115,6 @@ export default function App() {
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [isLogoModalOpen, setIsLogoModalOpen] = useState(false);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
-  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
   const [supabaseStatus, setSupabaseStatus] = useState<SupabaseStatus>({
     connected: true,
     tablesReady: false,
@@ -177,6 +176,14 @@ export default function App() {
     localStorage.setItem(STORAGE_KEYS.READ_NOTIFS, JSON.stringify(readNotifIds));
   }, [readNotifIds]);
 
+  // Sync browser tab favicon with saved studio logo or default NANDAN icon
+  useEffect(() => {
+    const iconLink = document.querySelector<HTMLLinkElement>("link[rel='icon']");
+    if (iconLink) {
+      iconLink.href = savedLogo || './favicon.png';
+    }
+  }, [savedLogo]);
+
   // Notifications generator
   const notifications: NotificationItem[] = [];
   if (currentUser) {
@@ -184,8 +191,9 @@ export default function App() {
       if (task.title.includes('[DIRECTOR DIRECTIVE]')) {
         if (currentUser.isBoss || task.empId === currentUser.id) {
           const assignedStaff = users.find((u) => u.id === task.empId);
-          notifications.push({
+          notifications.unshift({
             id: `notif-${task.id}`,
+            taskId: task.id,
             title: currentUser.isBoss
               ? `Directive to ${assignedStaff ? assignedStaff.name : task.empId}`
               : `New Director Directive Assigned`,
@@ -201,7 +209,7 @@ export default function App() {
     const todayStr = getTodayDateString();
     const myLog = attendanceLogs.find((a) => a.empId === currentUser.id && a.date === todayStr);
     if (myLog && myLog.isCheckedIn) {
-      notifications.push({
+      notifications.unshift({
         id: `notif-checkin-${currentUser.id}-${todayStr}`,
         title: 'Shift Active',
         desc: `You checked in at ${myLog.checkInTime}. Creative operations running.`,
@@ -245,7 +253,8 @@ export default function App() {
           checkInTime: timeStr,
           checkInTimestamp: now.getTime(),
           checkOutTime: null,
-          dateFormatted: formatDateEnglish(now)
+          dateFormatted: formatDateEnglish(now),
+          totalMinutes: 0
         };
         upsertAttendanceInSupabase(targetLog);
         return prev.map((a) => (a.empId === currentUser.id && a.date === today ? targetLog : a));
@@ -275,12 +284,14 @@ export default function App() {
     setAttendanceLogs((prev) =>
       prev.map((log) => {
         if (log.empId === currentUser.id && log.date === today && log.isCheckedIn) {
-          const elapsedMins = Math.max(1, Math.round((now.getTime() - log.checkInTimestamp) / 60000));
+          const startMs = log.checkInTimestamp || now.getTime();
+          const diffMs = Math.max(0, now.getTime() - startMs);
+          const elapsedMins = Math.max(1, Math.round(diffMs / 60000));
           const updatedLog: AttendanceLog = {
             ...log,
             isCheckedIn: false,
             checkOutTime: timeStr,
-            totalMinutes: (log.totalMinutes || 0) + elapsedMins
+            totalMinutes: elapsedMins
           };
           upsertAttendanceInSupabase(updatedLog);
           return updatedLog;
@@ -529,6 +540,38 @@ export default function App() {
     }
   };
 
+  const handleNotificationClick = (item: NotificationItem) => {
+    // 1. Mark as read
+    handleMarkSingleRead(item.id);
+
+    // 2. Switch to staff view where Today's Deliverables is displayed
+    setCurrentViewMode('staff');
+
+    // 3. Smoothly scroll to Today's Deliverables section or specific task card
+    setTimeout(() => {
+      if (item.taskId) {
+        const specificTask = document.getElementById(`deliverable-${item.taskId}`);
+        if (specificTask) {
+          specificTask.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          specificTask.classList.add('ring-4', 'ring-rose-500', 'ring-offset-2', 'bg-rose-50/80', 'transition-all', 'duration-500');
+          setTimeout(() => {
+            specificTask.classList.remove('ring-4', 'ring-rose-500', 'ring-offset-2', 'bg-rose-50/80');
+          }, 3000);
+          return;
+        }
+      }
+
+      const section = document.getElementById('todays-deliverables-section');
+      if (section) {
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        section.classList.add('ring-4', 'ring-rose-400', 'ring-offset-2', 'transition-all', 'duration-500');
+        setTimeout(() => {
+          section.classList.remove('ring-4', 'ring-rose-400', 'ring-offset-2');
+        }, 2500);
+      }
+    }, 120);
+  };
+
   // Export handlers
   const handleExportCSV = (timeframe: ExportTimeframe, filterMember: string) => {
     executeExportCSV(users, attendanceLogs, deliverables, filterMember, timeframe);
@@ -579,6 +622,7 @@ export default function App() {
             readNotifIds={readNotifIds}
             onMarkAllRead={handleMarkAllRead}
             onMarkSingleRead={handleMarkSingleRead}
+            onNotificationClick={handleNotificationClick}
           />
 
           <main className="w-full max-w-7xl mx-auto flex flex-col gap-6">

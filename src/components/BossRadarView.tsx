@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AttendanceLog, Deliverable, User } from '../types.ts';
 import { getTodayDateString } from '../utils/storage.ts';
+import { WeeklyHeatmapChart } from './WeeklyHeatmapChart.tsx';
 
 interface BossRadarViewProps {
   users: User[];
@@ -102,6 +103,14 @@ export const BossRadarView: React.FC<BossRadarViewProps> = ({
         </div>
       </section>
 
+      {/* Weekly 7-Day Attendance Heatmap & Trend Chart */}
+      <WeeklyHeatmapChart
+        users={users}
+        attendanceLogs={attendanceLogs}
+        deliverables={deliverables}
+        onInspectUser={onInspectUser}
+      />
+
       {/* Team Attendance & Live Deliverable Progress Table with SHIFT TIME Column */}
       <section className="glass-panel rounded-3xl p-6 sm:p-7 overflow-hidden">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -161,11 +170,11 @@ export const BossRadarView: React.FC<BossRadarViewProps> = ({
                     const mins = Math.floor(diffMs / 60000);
                     const hrs = Math.floor(mins / 60);
                     const remM = mins % 60;
-                    shiftTimeText = `${hrs}h ${String(remM).padStart(2, '0')}m live`;
+                    shiftTimeText = hrs > 0 ? `${hrs}h ${String(remM).padStart(2, '0')}m live` : `${remM}m live`;
                   } else if (log && log.totalMinutes > 0) {
                     const hrs = Math.floor(log.totalMinutes / 60);
                     const remM = log.totalMinutes % 60;
-                    shiftTimeText = `${hrs}h ${String(remM).padStart(2, '0')}m`;
+                    shiftTimeText = hrs > 0 ? `${hrs}h ${String(remM).padStart(2, '0')}m` : `${remM}m`;
                   }
 
                   const staffTasks = deliverables.filter(d => d.empId === staff.id);
