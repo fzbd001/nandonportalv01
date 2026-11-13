@@ -225,3 +225,36 @@ export async function fetchStudioLogoFromSupabase(): Promise<string | null> {
     return null;
   }
 }
+
+/**
+ * Save studio announcement ticker text in Supabase
+ */
+export async function saveStudioAnnouncementInSupabase(text: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('studio_settings').upsert({
+      key: 'studio_announcement',
+      value: text,
+      updated_at: new Date().toISOString()
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Fetch studio announcement ticker text from Supabase
+ */
+export async function fetchStudioAnnouncementFromSupabase(): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from('studio_settings')
+      .select('value')
+      .eq('key', 'studio_announcement')
+      .maybeSingle();
+    if (error || !data) return null;
+    return data.value;
+  } catch {
+    return null;
+  }
+}

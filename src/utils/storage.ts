@@ -15,7 +15,46 @@ export const STORAGE_KEYS = {
   DELIVERABLES: 'nandan_deliverables_v6',
   LOGO: 'nandan_custom_logo_v6',
   READ_NOTIFS: 'nandan_read_notifs_v6',
+  ANNOUNCEMENT: 'nandan_studio_announcement_v6',
 };
+
+export const DEFAULT_ANNOUNCEMENT =
+  'Welcome to NANDAN Broadcast & Creative Media — Please check in on arrival and keep your daily deliverables updated.';
+
+export function parseAnnouncements(raw: string | null | undefined): string[] {
+  if (!raw) return [DEFAULT_ANNOUNCEMENT];
+  const trimmed = raw.trim();
+  if (!trimmed) return [DEFAULT_ANNOUNCEMENT];
+
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        const cleaned = parsed
+          .map((item) => String(item).replace(/\s+/g, ' ').trim())
+          .filter(Boolean);
+        if (cleaned.length > 0) return cleaned;
+      }
+    } catch {
+      // fallback to plain string parsing
+    }
+  }
+
+  // Also support manual separator if pasted with || or newlines
+  const splitItems = trimmed
+    .split(/\s*\|\|\s*|\n+/)
+    .map((item) => item.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+
+  return splitItems.length > 0 ? splitItems : [DEFAULT_ANNOUNCEMENT];
+}
+
+export function serializeAnnouncements(items: string[]): string {
+  const cleaned = items
+    .map((item) => item.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  return JSON.stringify(cleaned.length > 0 ? cleaned : [DEFAULT_ANNOUNCEMENT]);
+}
 
 export function getTodayDateString(d = new Date()): string {
   const year = d.getFullYear();

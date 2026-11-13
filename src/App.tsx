@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Header } from './components/Header.tsx';
+import { UpdateTicker } from './components/UpdateTicker.tsx';
 import { StaffView } from './components/StaffView.tsx';
 import { BossRadarView } from './components/BossRadarView.tsx';
 import { LoginModal } from './components/modals/LoginModal.tsx';
@@ -15,8 +16,10 @@ import {
   deleteDeliverableFromSupabase,
   fetchAttendanceFromSupabase,
   fetchDeliverablesFromSupabase,
+  fetchStudioAnnouncementFromSupabase,
   fetchStudioLogoFromSupabase,
   fetchUsersFromSupabase,
+  saveStudioAnnouncementInSupabase,
   saveStudioLogoInSupabase,
   SupabaseStatus,
   upsertAttendanceInSupabase,
@@ -24,6 +27,7 @@ import {
   upsertUserInSupabase
 } from './utils/supabase.ts';
 import {
+  DEFAULT_ANNOUNCEMENT,
   formatDateEnglish,
   formatTime12h,
   generateInitialAttendance,
@@ -99,6 +103,10 @@ export default function App() {
     return localStorage.getItem(STORAGE_KEYS.LOGO);
   });
 
+  const [announcement, setAnnouncement] = useState<string>(() => {
+    return localStorage.getItem(STORAGE_KEYS.ANNOUNCEMENT) || DEFAULT_ANNOUNCEMENT;
+  });
+
   const [readNotifIds, setReadNotifIds] = useState<string[]>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEYS.READ_NOTIFS);
@@ -126,16 +134,21 @@ export default function App() {
       const status = await checkSupabaseStatus();
       setSupabaseStatus(status);
       if (status.tablesReady) {
-        const [dbUsers, dbLogs, dbDeliv, dbLogo] = await Promise.all([
+        const [dbUsers, dbLogs, dbDeliv, dbLogo, dbAnnouncement] = await Promise.all([
           fetchUsersFromSupabase(),
           fetchAttendanceFromSupabase(),
           fetchDeliverablesFromSupabase(),
-          fetchStudioLogoFromSupabase()
+          fetchStudioLogoFromSupabase(),
+          fetchStudioAnnouncementFromSupabase()
         ]);
         if (dbUsers && dbUsers.length > 0) setUsers(dbUsers);
         if (dbLogs && dbLogs.length > 0) setAttendanceLogs(dbLogs);
         if (dbDeliv && dbDeliv.length > 0) setDeliverables(dbDeliv);
         if (dbLogo !== null) setSavedLogo(dbLogo);
+        if (dbAnnouncement) {
+          setAnnouncement(dbAnnouncement);
+          localStorage.setItem(STORAGE_KEYS.ANNOUNCEMENT, dbAnnouncement);
+        }
       }
     } catch {
       // offline fallback
@@ -144,6 +157,21 @@ export default function App() {
 
   useEffect(() => {
     refreshSupabaseStatus();
+
+    const syncAnnouncement = async () => {
+      const latest = await fetchStudioAnnouncementFromSupabase();
+      if (latest) {
+        setAnnouncement(latest);
+        localStorage.setItem(STORAGE_KEYS.ANNOUNCEMENT, latest);
+      }
+    };
+
+    const interval = setInterval(syncAnnouncement, 30000);
+    window.addEventListener('focus', syncAnnouncement);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', syncAnnouncement);
+    };
   }, []);
 
   // Sync to localStorage
@@ -528,6 +556,14 @@ export default function App() {
     saveStudioLogoInSupabase(null);
   };
 
+  // Studio announcement ticker handler (Boss)
+  const handleSaveAnnouncement = async (newText: string) => {
+    setAnnouncement(newText);
+    localStorage.setItem(STORAGE_KEYS.ANNOUNCEMENT, newText);
+    await saveStudioAnnouncementInSupabase(newText);
+    playChime();
+  };
+
   // Notifications mark read
   const handleMarkAllRead = () => {
     const allIds = notifications.map((n) => n.id);
@@ -623,6 +659,12 @@ export default function App() {
             onMarkAllRead={handleMarkAllRead}
             onMarkSingleRead={handleMarkSingleRead}
             onNotificationClick={handleNotificationClick}
+          />
+
+          <UpdateTicker
+            announcement={announcement}
+            isBoss={currentUser.isBoss}
+            onSaveAnnouncement={handleSaveAnnouncement}
           />
 
           <main className="w-full max-w-7xl mx-auto flex flex-col gap-6">
