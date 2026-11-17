@@ -10,29 +10,34 @@ import { ProfileEditModal } from './components/modals/ProfileEditModal.tsx';
 import { RegisterUserModal } from './components/modals/RegisterUserModal.tsx';
 import { PermanentLogoModal } from './components/modals/PermanentLogoModal.tsx';
 import { DownloadReportModal } from './components/modals/DownloadReportModal.tsx';
-import { AttendanceLog, Deliverable, ExportTimeframe, NotificationItem, User } from './types.ts';
+import { AttendanceLog, Deliverable, ExportTimeframe, NotificationItem, User, WorkLocation, WorkLocationStore } from './types.ts';
 import {
   checkSupabaseStatus,
   deleteDeliverableFromSupabase,
+  deleteUserFromSupabase,
   fetchAttendanceFromSupabase,
   fetchDeliverablesFromSupabase,
   fetchStudioAnnouncementFromSupabase,
   fetchStudioLogoFromSupabase,
   fetchUsersFromSupabase,
+  fetchWorkLocationsFromSupabase,
   saveStudioAnnouncementInSupabase,
   saveStudioLogoInSupabase,
   SupabaseStatus,
   upsertAttendanceInSupabase,
   upsertDeliverableInSupabase,
+  upsertEmployeeWorkLocationInSupabase,
   upsertUserInSupabase
 } from './utils/supabase.ts';
 import {
   DEFAULT_ANNOUNCEMENT,
+  EMPTY_WORK_LOCATIONS,
   formatDateEnglish,
   formatTime12h,
   generateInitialAttendance,
   generateInitialDeliverables,
   getTodayDateString,
+  getWorkLocationForDate,
   INITIAL_USERS,
   STORAGE_KEYS
 } from './utils/storage.ts';
@@ -45,7 +50,7 @@ export default function App() {
       const stored = localStorage.getItem(STORAGE_KEYS.USERS);
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length >= INITIAL_USERS.length) {
+        if (Array.isArray(parsed) && parsed.length > 0) {
           return parsed;
         }
       }
@@ -116,6 +121,24 @@ export default function App() {
     }
   });
 
+  const [workLocations, setWorkLocations] = useState<WorkLocationStore>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.WORK_LOCATIONS);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed === 'object') {
+          return {
+            latestByEmp: parsed.latestByEmp && typeof parsed.latestByEmp === 'object' ? parsed.latestByEmp : {},
+            byDate: parsed.byDate && typeof parsed.byDate === 'object' ? parsed.byDate : {},
+          };
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return EMPTY_WORK_LOCATIONS;
+  });
+
   // Modals state
   const [inspectingUser, setInspectingUser] = useState<User | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -134,12 +157,13 @@ export default function App() {
       const status = await checkSupabaseStatus();
       setSupabaseStatus(status);
       if (status.tablesReady) {
-        const [dbUsers, dbLogs, dbDeliv, dbLogo, dbAnnouncement] = await Promise.all([
+        const [dbUsers, dbLogs, dbDeliv, dbLogo, dbAnnouncement, dbWorkLocations] = await Promise.all([
           fetchUsersFromSupabase(),
           fetchAttendanceFromSupabase(),
           fetchDeliverablesFromSupabase(),
           fetchStudioLogoFromSupabase(),
-          fetchStudioAnnouncementFromSupabase()
+          fetchStudioAnnouncementFromSupabase(),
+          fetchWorkLocationsFromSupabase()
         ]);
         if (dbUsers && dbUsers.length > 0) setUsers(dbUsers);
         if (dbLogs && dbLogs.length > 0) setAttendanceLogs(dbLogs);
@@ -148,6 +172,10 @@ export default function App() {
         if (dbAnnouncement) {
           setAnnouncement(dbAnnouncement);
           localStorage.setItem(STORAGE_KEYS.ANNOUNCEMENT, dbAnnouncement);
+        }
+        if (dbWorkLocations) {
+          setWorkLocations(dbWorkLocations);
+          localStorage.setItem(STORAGE_KEYS.WORK_LOCATIONS, JSON.stringify(dbWorkLocations));
         }
       }
     } catch {
@@ -158,19 +186,30 @@ export default function App() {
   useEffect(() => {
     refreshSupabaseStatus();
 
-    const syncAnnouncement = async () => {
-      const latest = await fetchStudioAnnouncementFromSupabase();
-      if (latest) {
-        setAnnouncement(latest);
-        localStorage.setItem(STORAGE_KEYS.ANNOUNCEMENT, latest);
+    const syncLiveUpdates = async () => {
+      const [latestAnnouncement, latestLocations, latestLogs] = await Promise.all([
+        fetchStudioAnnouncementFromSupabase(),
+        fetchWorkLocationsFromSupabase(),
+        fetchAttendanceFromSupabase()
+      ]);
+      if (latestAnnouncement) {
+        setAnnouncement(latestAnnouncement);
+        localStorage.setItem(STORAGE_KEYS.ANNOUNCEMENT, latestAnnouncement);
+      }
+      if (latestLocations) {
+        setWorkLocations(latestLocations);
+        localStorage.setItem(STORAGE_KEYS.WORK_LOCATIONS, JSON.stringify(latestLocations));
+      }
+      if (latestLogs && latestLogs.length > 0) {
+        setAttendanceLogs(latestLogs);
       }
     };
 
-    const interval = setInterval(syncAnnouncement, 30000);
-    window.addEventListener('focus', syncAnnouncement);
+    const interval = setInterval(syncLiveUpdates, 30000);
+    window.addEventListener('focus', syncLiveUpdates);
     return () => {
       clearInterval(interval);
-      window.removeEventListener('focus', syncAnnouncement);
+      window.removeEventListener('focus', syncLiveUpdates);
     };
   }, []);
 
@@ -203,6 +242,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.READ_NOTIFS, JSON.stringify(readNotifIds));
   }, [readNotifIds]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.WORK_LOCATIONS, JSON.stringify(workLocations));
+  }, [workLocations]);
 
   // Sync browser tab favicon with saved studio logo or default NANDAN icon
   useEffect(() => {
@@ -448,42 +491,51 @@ export default function App() {
     }
   };
 
-  // Boss Directive handler
+  // Boss Directive handler (supports assigning one or multiple categories at once)
   const handleAssignDirective = async (
     empId: string,
-    category: string,
+    categories: string[],
     title: string,
     instructions: string
   ) => {
-    const newTask: Deliverable = {
-      id: `del-${Date.now()}`,
+    const now = new Date();
+    const baseTs = now.getTime();
+    const timeStr = formatTime12h(now);
+    const today = getTodayDateString(now);
+
+    const newTasks: Deliverable[] = categories.map((cat, idx) => ({
+      id: `del-${baseTs}-${idx}`,
       empId,
-      category,
-      title: `[DIRECTOR DIRECTIVE] ${title}`,
+      category: cat,
+      title: title.trim() ? `[DIRECTOR DIRECTIVE] ${title.trim()}` : `[DIRECTOR DIRECTIVE] ${cat}`,
       notes: instructions,
       progress: 0,
       completed: false,
-      timestamp: formatTime12h(new Date()),
-      date: getTodayDateString()
-    };
+      timestamp: timeStr,
+      date: today
+    }));
 
-    setDeliverables((prev) => [newTask, ...prev]);
+    setDeliverables((prev) => [...newTasks, ...prev]);
     playChime();
-    upsertDeliverableInSupabase(newTask);
 
-    try {
-      await fetch('/api/deliverables', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newTask)
-      });
-    } catch {
-      // offline fallback
-    }
+    await Promise.all(
+      newTasks.map(async (task) => {
+        upsertDeliverableInSupabase(task);
+        try {
+          await fetch('/api/deliverables', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(task)
+          });
+        } catch {
+          // offline fallback
+        }
+      })
+    );
   };
 
   // Auth handlers
-  const handleLogin = (empId: string, passwordInput: string): boolean => {
+  const handleLogin = (empId: string, passwordInput: string, workLocation: WorkLocation): boolean => {
     const user = users.find(
       (u) =>
         u.id.toLowerCase() === empId.toLowerCase() ||
@@ -491,11 +543,27 @@ export default function App() {
     );
     if (!user) return false;
 
-    const isValid =
-      (user.isBoss && (passwordInput === user.password || passwordInput === '1234' || passwordInput === 'boss123')) ||
-      user.password === passwordInput;
+    const isValid = user.password === passwordInput;
 
     if (isValid) {
+      const today = getTodayDateString();
+      const loginTime = formatTime12h(new Date());
+      const nextStore: WorkLocationStore = {
+        latestByEmp: {
+          ...workLocations.latestByEmp,
+          [user.id]: { location: workLocation, loginTime, date: today }
+        },
+        byDate: {
+          ...workLocations.byDate,
+          [`${user.id}__${today}`]: workLocation
+        }
+      };
+      setWorkLocations(nextStore);
+      upsertEmployeeWorkLocationInSupabase(user.id, today, loginTime, workLocation, nextStore)
+        .then((merged) => setWorkLocations(merged))
+        .catch(() => {
+          // offline fallback
+        });
       setCurrentUser(user);
       playChime();
       return true;
@@ -541,6 +609,45 @@ export default function App() {
     });
 
     return true;
+  };
+
+  // Update an employee's password (Boss)
+  const handleUpdateEmployeePassword = (userId: string, newPassword: string) => {
+    let updatedUser: User | undefined;
+    setUsers((prev) =>
+      prev.map((u) => {
+        if (u.id === userId) {
+          updatedUser = { ...u, password: newPassword };
+          return updatedUser;
+        }
+        return u;
+      })
+    );
+    playChime();
+
+    if (updatedUser) {
+      upsertUserInSupabase(updatedUser);
+      fetch(`/api/users/${userId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: newPassword })
+      }).catch(() => {
+        // offline fallback
+      });
+    }
+  };
+
+  // Delete an employee account (Boss)
+  const handleDeleteEmployee = (userId: string) => {
+    setUsers((prev) => prev.filter((u) => u.id !== userId || u.isBoss));
+    playChime();
+    deleteUserFromSupabase(userId);
+
+    fetch(`/api/users/${userId}`, {
+      method: 'DELETE'
+    }).catch(() => {
+      // offline fallback
+    });
   };
 
   // Logo handlers
@@ -610,13 +717,13 @@ export default function App() {
 
   // Export handlers
   const handleExportCSV = (timeframe: ExportTimeframe, filterMember: string) => {
-    executeExportCSV(users, attendanceLogs, deliverables, filterMember, timeframe);
+    executeExportCSV(users, attendanceLogs, deliverables, filterMember, timeframe, workLocations);
     playChime();
     setIsDownloadModalOpen(false);
   };
 
   const handleDownloadPDF = (timeframe: ExportTimeframe, filterMember: string) => {
-    generateAndPrintPDFReport(users, attendanceLogs, deliverables, filterMember, timeframe, savedLogo);
+    generateAndPrintPDFReport(users, attendanceLogs, deliverables, filterMember, timeframe, savedLogo, workLocations);
     playChime();
     setIsDownloadModalOpen(false);
   };
@@ -626,6 +733,9 @@ export default function App() {
   const currentUserTodayLog = currentUser
     ? attendanceLogs.find((a) => a.empId === currentUser.id && a.date === todayStr)
     : undefined;
+  const currentUserTodayWorkLocation = currentUser
+    ? getWorkLocationForDate(workLocations, currentUser.id, todayStr)
+    : null;
 
   const currentUser5DayLogs = currentUser
     ? attendanceLogs
@@ -672,6 +782,7 @@ export default function App() {
               <StaffView
                 currentUser={currentUser}
                 todayLog={currentUserTodayLog}
+                todayWorkLocation={currentUserTodayWorkLocation}
                 staff5DayLogs={currentUser5DayLogs}
                 deliverables={deliverables}
                 onCheckIn={handleCheckIn}
@@ -686,8 +797,10 @@ export default function App() {
                 users={users}
                 attendanceLogs={attendanceLogs}
                 deliverables={deliverables}
+                workLocations={workLocations}
                 onOpenDownloadModal={() => setIsDownloadModalOpen(true)}
                 onOpenAssignModal={() => setIsAssignModalOpen(true)}
+                onOpenTeamIdsModal={() => setIsRegisterModalOpen(true)}
                 onInspectUser={(u) => setInspectingUser(u)}
               />
             )}
@@ -695,7 +808,6 @@ export default function App() {
         </>
       ) : (
         <LoginModal
-          users={users}
           savedLogo={savedLogo}
           onOpenLogoModal={() => setIsLogoModalOpen(true)}
           onLogin={handleLogin}
@@ -724,6 +836,8 @@ export default function App() {
           users={users}
           onClose={() => setIsRegisterModalOpen(false)}
           onRegister={handleRegisterUser}
+          onUpdatePassword={handleUpdateEmployeePassword}
+          onDeleteUser={handleDeleteEmployee}
         />
       )}
 
@@ -749,6 +863,7 @@ export default function App() {
           user={inspectingUser}
           deliverables={deliverables}
           attendanceLogs={attendanceLogs}
+          workLocations={workLocations}
           onClose={() => setInspectingUser(null)}
         />
       )}

@@ -1,9 +1,10 @@
-import { AttendanceLog, Deliverable, ExportTimeframe, User } from '../types.ts';
-import { getTodayDateString } from './storage.ts';
+import { AttendanceLog, Deliverable, ExportTimeframe, User, WorkLocationStore } from '../types.ts';
+import { getTodayDateString, getWorkLocationForDate } from './storage.ts';
 
 export interface StaffPeriodStats {
   checkIn: string;
   checkOut: string;
+  workLocation: string;
   totalMinutes: number;
   daysAbsent: number;
   totalTasks: number;
@@ -15,7 +16,8 @@ export function calculateStaffPeriodStats(
   attendanceLogs: AttendanceLog[],
   deliverables: Deliverable[],
   empId: string,
-  timeframe: ExportTimeframe
+  timeframe: ExportTimeframe,
+  workLocations?: WorkLocationStore
 ): StaffPeriodStats {
   const today = getTodayDateString();
   const numDays = timeframe === 'daily' ? 1 : (timeframe === 'weekly' ? 7 : 30);
@@ -41,6 +43,30 @@ export function calculateStaffPeriodStats(
     }
   });
 
+  // Compute work location summary for period
+  let workLocation = 'Not Signed In';
+  if (timeframe === 'daily') {
+    const loc = getWorkLocationForDate(workLocations, empId, today);
+    workLocation = loc === 'Office' ? 'From Office' : loc === 'Home' ? 'From Home' : 'Not Signed In';
+  } else {
+    let officeDays = 0;
+    let homeDays = 0;
+    targetDates.forEach((dateStr) => {
+      const loc = getWorkLocationForDate(workLocations, empId, dateStr);
+      if (loc === 'Office') officeDays++;
+      if (loc === 'Home') homeDays++;
+    });
+    if (officeDays > 0 && homeDays > 0) {
+      workLocation = `Office (${officeDays}d), Home (${homeDays}d)`;
+    } else if (officeDays > 0) {
+      workLocation = `From Office (${officeDays}d)`;
+    } else if (homeDays > 0) {
+      workLocation = `From Home (${homeDays}d)`;
+    } else {
+      workLocation = 'Not Recorded';
+    }
+  }
+
   const totalMins = relevantLogs.reduce((acc, l) => acc + (l.totalMinutes || 0), 0);
   const relevantTasks = deliverables.filter(d => d.empId === empId && targetDates.includes(d.date));
   const completedCount = relevantTasks.filter(t => t.progress >= 100).length;
@@ -48,6 +74,7 @@ export function calculateStaffPeriodStats(
   return {
     checkIn: todayLog ? (todayLog.checkInTime || '--:--') : '--:--',
     checkOut: todayLog ? (todayLog.checkOutTime || '--:--') : '--:--',
+    workLocation,
     totalMinutes: totalMins,
     daysAbsent: absentCount,
     totalTasks: relevantTasks.length,
@@ -61,7 +88,8 @@ export function executeExportCSV(
   attendanceLogs: AttendanceLog[],
   deliverables: Deliverable[],
   filterMember: string,
-  timeframe: ExportTimeframe
+  timeframe: ExportTimeframe,
+  workLocations?: WorkLocationStore
 ) {
   const today = getTodayDateString();
   let targetUsers = users.filter(u => !u.isBoss);
@@ -69,14 +97,14 @@ export function executeExportCSV(
     targetUsers = targetUsers.filter(u => u.id === filterMember);
   }
 
-  let csv = "Employee Name,Employee ID,Designation,Period,Check In,Check Out,Total Minutes,Total Hours,Days Absent,Tasks Count,Completed Tasks,Deliverables Breakdown\n";
+  let csv = "Employee Name,Employee ID,Designation,Period,Work Location,Check In,Check Out,Total Minutes,Total Hours,Days Absent,Tasks Count,Completed Tasks,Deliverables Breakdown\n";
 
   targetUsers.forEach(staff => {
-    const stats = calculateStaffPeriodStats(attendanceLogs, deliverables, staff.id, timeframe);
+    const stats = calculateStaffPeriodStats(attendanceLogs, deliverables, staff.id, timeframe, workLocations);
     const tasksSummary = stats.tasks.map(t => `${t.title} (${t.progress}%)`).join('; ') || 'No tasks';
     const cleanTasks = tasksSummary.replace(/"/g, '""');
 
-    csv += `"${staff.name}","${staff.id}","${staff.role}","${timeframe.toUpperCase()}","${stats.checkIn}","${stats.checkOut}","${stats.totalMinutes}","${(stats.totalMinutes / 60).toFixed(1)}","${stats.daysAbsent}","${stats.totalTasks}","${stats.completedTasks}","${cleanTasks}"\n`;
+    csv += `"${staff.name}","${staff.id}","${staff.role}","${timeframe.toUpperCase()}","${stats.workLocation}","${stats.checkIn}","${stats.checkOut}","${stats.totalMinutes}","${(stats.totalMinutes / 60).toFixed(1)}","${stats.daysAbsent}","${stats.totalTasks}","${stats.completedTasks}","${cleanTasks}"\n`;
   });
 
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -109,7 +137,8 @@ export function generateAndPrintPDFReport(
   deliverables: Deliverable[],
   filterMember: string,
   timeframe: ExportTimeframe,
-  savedLogo: string | null
+  savedLogo: string | null,
+  workLocations?: WorkLocationStore
 ) {
   const timeframeTitle = timeframe.charAt(0).toUpperCase() + timeframe.slice(1);
 
@@ -123,10 +152,12 @@ export function generateAndPrintPDFReport(
     : `<div style="width:48px; height:48px; border-radius:10px; background:#e11d48; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:11px;">NANDAN</div>`;
 
   const staffCardsHtml = targetUsers.map(staff => {
-    const stats = calculateStaffPeriodStats(attendanceLogs, deliverables, staff.id, timeframe);
+    const stats = calculateStaffPeriodStats(attendanceLogs, deliverables, staff.id, timeframe, workLocations);
     const hours = Math.floor(stats.totalMinutes / 60);
     const mins = stats.totalMinutes % 60;
     const formattedTime = `${stats.totalMinutes} mins (${hours}h ${mins}m)`;
+    const isHomeReport = stats.workLocation.includes('Home');
+    const isOfficeReport = stats.workLocation.includes('Office');
 
     const taskRowsHtml = stats.tasks.length > 0 ? stats.tasks.map((t, idx) => `
       <tr style="border-bottom: 1px solid #f1f5f9; font-size: 11px;">
@@ -145,14 +176,21 @@ export function generateAndPrintPDFReport(
             <h3 style="margin: 0; font-size: 15px; font-weight: 800; color: #0f172a;">${escapeHtml(staff.name)}</h3>
             <p style="margin: 3px 0 0; font-size: 11px; color: #64748b; font-weight: 600;">${escapeHtml(staff.role)} &bull; <span style="font-family: monospace; color:#0f172a; background:#f1f5f9; padding: 1px 5px; border-radius:4px;">${staff.id}</span></p>
           </div>
-          <div style="text-align: right;">
+          <div style="text-align: right; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end;">
+            <span style="display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 10px; font-weight: 800; ${isHomeReport && !isOfficeReport ? 'background:#eef2ff; color:#4338ca; border:1px solid #c7d2fe;' : isOfficeReport ? 'background:#0f172a; color:#ffffff; border:1px solid #0f172a;' : 'background:#f1f5f9; color:#64748b; border:1px solid #cbd5e1;'}">
+              ${escapeHtml(stats.workLocation)}
+            </span>
             <span style="display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 10px; font-weight: 800; ${stats.daysAbsent === 0 ? 'background:#ecfdf5; color:#059669; border:1px solid #a7f3d0;' : 'background:#fff1f2; color:#e11d48; border:1px solid #fecdd3;'}">
               ${stats.daysAbsent === 0 ? '100% Attendance' : `${stats.daysAbsent} Days Absent`}
             </span>
           </div>
         </div>
 
-        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 16px;">
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px;">
+          <div style="background: #f8fafc; padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0;">
+            <div style="font-size: 9px; font-weight: 800; color: #94a3b8; text-transform: uppercase;">Work Location</div>
+            <div style="font-size: 12px; font-weight: 800; color: ${isHomeReport && !isOfficeReport ? '#4338ca' : '#0f172a'}; margin-top: 2px;">${escapeHtml(stats.workLocation)}</div>
+          </div>
           <div style="background: #f8fafc; padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0;">
             <div style="font-size: 9px; font-weight: 800; color: #94a3b8; text-transform: uppercase;">Check In</div>
             <div style="font-size: 12px; font-weight: 700; color: #1e293b; font-family: monospace; margin-top: 2px;">${stats.checkIn}</div>

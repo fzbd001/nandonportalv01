@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
-import { AttendanceLog, Deliverable, User } from '../types.ts';
-import { getTodayDateString } from '../utils/storage.ts';
+import { AttendanceLog, Deliverable, User, WorkLocationStore } from '../types.ts';
+import { getTodayDateString, getWorkLocationForDate } from '../utils/storage.ts';
 import { WeeklyHeatmapChart } from './WeeklyHeatmapChart.tsx';
 
 interface BossRadarViewProps {
   users: User[];
   attendanceLogs: AttendanceLog[];
   deliverables: Deliverable[];
+  workLocations: WorkLocationStore;
   onOpenDownloadModal: () => void;
   onOpenAssignModal: () => void;
+  onOpenTeamIdsModal: () => void;
   onInspectUser: (user: User) => void;
 }
 
@@ -16,8 +18,10 @@ export const BossRadarView: React.FC<BossRadarViewProps> = ({
   users,
   attendanceLogs,
   deliverables,
+  workLocations,
   onOpenDownloadModal,
   onOpenAssignModal,
+  onOpenTeamIdsModal,
   onInspectUser
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -27,9 +31,14 @@ export const BossRadarView: React.FC<BossRadarViewProps> = ({
 
   // Stats calculation
   let activeDutyCount = 0;
+  let officeSignInCount = 0;
+  let homeSignInCount = 0;
   staffList.forEach(s => {
     const log = attendanceLogs.find(a => a.empId === s.id && a.date === today);
     if (log && log.isCheckedIn) activeDutyCount++;
+    const loc = getWorkLocationForDate(workLocations, s.id, today);
+    if (loc === 'Office') officeSignInCount++;
+    if (loc === 'Home') homeSignInCount++;
   });
 
   const todayTasks = deliverables.filter(d => d.date === today);
@@ -58,7 +67,13 @@ export const BossRadarView: React.FC<BossRadarViewProps> = ({
               Real-time attendance radar, workflow monitoring &amp; confidential task delegation.
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <button
+              onClick={onOpenTeamIdsModal}
+              className="px-4 py-2.5 rounded-full bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer"
+            >
+              <i className="fa-solid fa-id-card-clip text-rose-400 text-xs"></i> Team IDs &amp; Access
+            </button>
             <button
               onClick={onOpenDownloadModal}
               className="px-4 py-2.5 rounded-full bg-white/90 border border-slate-200/90 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-all shadow-sm flex items-center gap-2 cursor-pointer"
@@ -87,6 +102,13 @@ export const BossRadarView: React.FC<BossRadarViewProps> = ({
             <div className="text-xl sm:text-2xl font-extrabold text-emerald-600 mt-1">
               {activeDutyCount} Active
             </div>
+            {(officeSignInCount > 0 || homeSignInCount > 0) && (
+              <div className="text-[11px] font-semibold text-slate-500 mt-1 flex items-center gap-2">
+                <span className="text-rose-600">{officeSignInCount} Office</span>
+                <span>•</span>
+                <span className="text-indigo-600">{homeSignInCount} Home</span>
+              </div>
+            )}
           </div>
           <div className="stat-card rounded-2xl p-4">
             <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">DELIVERABLES IN PROGRESS</span>
@@ -143,6 +165,7 @@ export const BossRadarView: React.FC<BossRadarViewProps> = ({
               <tr className="border-b border-slate-200/80 text-[11px] uppercase tracking-wider font-bold text-slate-400">
                 <th className="py-3.5 px-4 font-bold">CREATIVE</th>
                 <th className="py-3.5 px-4 font-bold text-center">PRESENCE STATUS</th>
+                <th className="py-3.5 px-4 font-bold text-center">WORK LOCATION</th>
                 <th className="py-3.5 px-4 font-bold text-center">CHECK IN</th>
                 <th className="py-3.5 px-4 font-bold text-center">CHECK OUT</th>
                 <th className="py-3.5 px-4 font-bold text-center">SHIFT TIME</th>
@@ -153,7 +176,7 @@ export const BossRadarView: React.FC<BossRadarViewProps> = ({
             <tbody className="text-xs divide-y divide-slate-100">
               {filteredStaff.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-slate-400 text-xs">
+                  <td colSpan={8} className="py-8 text-center text-slate-400 text-xs">
                     No creative members match your search.
                   </td>
                 </tr>
@@ -163,6 +186,9 @@ export const BossRadarView: React.FC<BossRadarViewProps> = ({
                   const isPresent = Boolean(log?.isCheckedIn);
                   const checkIn = log?.checkInTime || '--:--';
                   const checkOut = log?.checkOutTime || '--:--';
+                  const todayLoc = getWorkLocationForDate(workLocations, staff.id, today);
+                  const latestRecord = workLocations.latestByEmp?.[staff.id];
+                  const loginTimeToday = latestRecord && latestRecord.date === today ? latestRecord.loginTime : null;
 
                   let shiftTimeText = '--';
                   if (isPresent && log?.checkInTimestamp) {
@@ -199,13 +225,42 @@ export const BossRadarView: React.FC<BossRadarViewProps> = ({
                       </td>
                       <td className="py-3.5 px-4 text-center">
                         {isPresent ? (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> In Office
-                          </span>
+                          todayLoc === 'Home' ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span> Work from Home
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> In Office
+                            </span>
+                          )
                         ) : (
                           <span className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold bg-rose-50 text-rose-600 border border-rose-200">
                             Absent
                           </span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        {todayLoc === 'Office' ? (
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-900 text-white">
+                              <i className="fa-solid fa-building text-rose-400 text-[10px]"></i> From Office
+                            </span>
+                            {loginTimeToday && (
+                              <span className="text-[10px] text-slate-400 font-mono">Signed {loginTimeToday}</span>
+                            )}
+                          </div>
+                        ) : todayLoc === 'Home' ? (
+                          <div className="flex flex-col items-center gap-0.5">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              <i className="fa-solid fa-house-laptop text-indigo-600 text-[10px]"></i> From Home
+                            </span>
+                            {loginTimeToday && (
+                              <span className="text-[10px] text-slate-400 font-mono">Signed {loginTimeToday}</span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-slate-400 font-medium">Not Signed In</span>
                         )}
                       </td>
                       <td className="py-3.5 px-4 text-center font-mono font-bold text-xs text-slate-700">

@@ -44,6 +44,19 @@ export interface NotificationItem {
 
 export type ExportTimeframe = 'daily' | 'weekly' | 'monthly';
 
+export type WorkLocation = 'Office' | 'Home';
+
+export interface WorkLocationRecord {
+  location: WorkLocation;
+  loginTime: string;
+  date: string; // YYYY-MM-DD
+}
+
+export interface WorkLocationStore {
+  latestByEmp: Record<string, WorkLocationRecord>;
+  byDate: Record<string, WorkLocation>; // key: `${empId}__${date}`
+}
+
 export const CREATIVE_CATEGORIES = [
   'Video Editing',
   'Graphic Design',

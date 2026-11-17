@@ -268,9 +268,9 @@ export const Header: React.FC<HeaderProps> = ({
                       setIsProfileOpen(false);
                       onOpenRegisterModal();
                     }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
                   >
-                    <i className="fa-solid fa-id-card-clip text-rose-500 text-sm"></i> Register Custom ID
+                    <i className="fa-solid fa-id-card-clip text-rose-500 text-sm"></i> Team IDs &amp; Access
                   </button>
                 )}
 

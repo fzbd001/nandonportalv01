@@ -1,4 +1,4 @@
-import { AttendanceLog, Deliverable, User } from '../types.ts';
+import { AttendanceLog, Deliverable, User, WorkLocation, WorkLocationStore } from '../types.ts';
 
 export const INITIAL_USERS: User[] = [
   { id: "boss123", name: "Nil Utpal", role: "Creative Director & Boss", isBoss: true, password: "boss123" },
@@ -16,7 +16,30 @@ export const STORAGE_KEYS = {
   LOGO: 'nandan_custom_logo_v6',
   READ_NOTIFS: 'nandan_read_notifs_v6',
   ANNOUNCEMENT: 'nandan_studio_announcement_v6',
+  WORK_LOCATIONS: 'nandan_work_locations_v6',
 };
+
+export const EMPTY_WORK_LOCATIONS: WorkLocationStore = {
+  latestByEmp: {},
+  byDate: {},
+};
+
+export function getWorkLocationForDate(
+  store: WorkLocationStore | undefined,
+  empId: string,
+  date: string
+): WorkLocation | null {
+  if (!store) return null;
+  const dateKey = `${empId}__${date}`;
+  if (store.byDate && store.byDate[dateKey]) {
+    return store.byDate[dateKey];
+  }
+  const latest = store.latestByEmp?.[empId];
+  if (latest && latest.date === date) {
+    return latest.location;
+  }
+  return null;
+}
 
 export const DEFAULT_ANNOUNCEMENT =
   'Welcome to NANDAN Broadcast & Creative Media — Please check in on arrival and keep your daily deliverables updated.';

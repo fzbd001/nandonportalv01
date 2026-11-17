@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { AttendanceLog, CREATIVE_CATEGORIES, Deliverable, User } from '../types.ts';
+import { AttendanceLog, CREATIVE_CATEGORIES, Deliverable, User, WorkLocation } from '../types.ts';
 
 interface StaffViewProps {
   currentUser: User;
   todayLog: AttendanceLog | undefined;
+  todayWorkLocation?: WorkLocation | null;
   staff5DayLogs: AttendanceLog[];
   deliverables: Deliverable[];
   onCheckIn: () => void;
@@ -17,6 +18,7 @@ interface StaffViewProps {
 export const StaffView: React.FC<StaffViewProps> = ({
   currentUser,
   todayLog,
+  todayWorkLocation,
   staff5DayLogs,
   deliverables,
   onCheckIn,
@@ -106,8 +108,24 @@ export const StaffView: React.FC<StaffViewProps> = ({
             </div>
           </div>
 
-          {/* Controls: Duty Status Pill + Check In + Check Out */}
+          {/* Controls: Work Location Pill + Duty Status Pill + Check In + Check Out */}
           <div className="flex items-center gap-3 flex-wrap">
+            {todayWorkLocation && (
+              <div
+                className={`px-3.5 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 border ${
+                  todayWorkLocation === 'Home'
+                    ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                    : 'bg-slate-900 text-white border-slate-900'
+                }`}
+              >
+                <i
+                  className={`fa-solid ${
+                    todayWorkLocation === 'Home' ? 'fa-house-laptop text-indigo-500' : 'fa-building text-rose-400'
+                  } text-[11px]`}
+                ></i>
+                <span>From {todayWorkLocation}</span>
+              </div>
+            )}
             <div
               className={`px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 transition-all ${
                 isCheckedIn ? 'duty-pill-active' : 'duty-pill-inactive'

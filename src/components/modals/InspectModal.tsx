@@ -1,10 +1,12 @@
 import React from 'react';
-import { AttendanceLog, Deliverable, User } from '../../types.ts';
+import { AttendanceLog, Deliverable, User, WorkLocationStore } from '../../types.ts';
+import { getTodayDateString, getWorkLocationForDate } from '../../utils/storage.ts';
 
 interface InspectModalProps {
   user: User;
   deliverables: Deliverable[];
   attendanceLogs: AttendanceLog[];
+  workLocations: WorkLocationStore;
   onClose: () => void;
 }
 
@@ -12,8 +14,11 @@ export const InspectModal: React.FC<InspectModalProps> = ({
   user,
   deliverables,
   attendanceLogs,
+  workLocations,
   onClose
 }) => {
+  const today = getTodayDateString();
+  const todayLoc = getWorkLocationForDate(workLocations, user.id, today);
   const staffTasks = deliverables.filter(d => d.empId === user.id);
   const staffLogs = attendanceLogs
     .filter(a => a.empId === user.id)
@@ -32,9 +37,23 @@ export const InspectModal: React.FC<InspectModalProps> = ({
         {/* Modal Header */}
         <div className="flex items-start justify-between pb-4 mb-4 border-b border-slate-100">
           <div>
-            <h3 className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight">
-              {user.name}'s Shift Deliverables
-            </h3>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight">
+                {user.name}'s Shift Deliverables
+              </h3>
+              {todayLoc && (
+                <span
+                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                    todayLoc === 'Home'
+                      ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                      : 'bg-slate-900 text-white'
+                  }`}
+                >
+                  <i className={`fa-solid ${todayLoc === 'Home' ? 'fa-house-laptop text-indigo-500' : 'fa-building text-rose-400'}`}></i>
+                  From {todayLoc}
+                </span>
+              )}
+            </div>
             <p className="text-xs font-medium text-slate-500 mt-0.5">
               {user.role} • ID: {user.id}
             </p>
@@ -95,6 +114,7 @@ export const InspectModal: React.FC<InspectModalProps> = ({
               <thead>
                 <tr className="border-b border-slate-100 text-[10px] uppercase font-bold text-slate-400 bg-slate-50/50">
                   <th className="py-2.5 px-3">Date</th>
+                  <th className="py-2.5 px-3 text-center">Location</th>
                   <th className="py-2.5 px-3 text-center">Check in</th>
                   <th className="py-2.5 px-3 text-center">Check out</th>
                   <th className="py-2.5 px-3 text-right">Time</th>
@@ -103,12 +123,13 @@ export const InspectModal: React.FC<InspectModalProps> = ({
               <tbody className="divide-y divide-slate-100">
                 {staffLogs.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="py-4 text-center text-slate-400 text-xs">
+                    <td colSpan={5} className="py-4 text-center text-slate-400 text-xs">
                       No attendance records found.
                     </td>
                   </tr>
                 ) : (
                   staffLogs.map((log) => {
+                    const logLoc = getWorkLocationForDate(workLocations, user.id, log.date);
                     let timeTxt = null;
                     if (log.isCheckedIn) {
                       timeTxt = <span className="text-amber-600 font-bold">In Progress</span>;
@@ -122,6 +143,19 @@ export const InspectModal: React.FC<InspectModalProps> = ({
                       <tr key={log.id}>
                         <td className="py-2 px-3 font-semibold text-slate-700">
                           {log.dateFormatted || log.date}
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          {logLoc === 'Office' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-800">
+                              <i className="fa-solid fa-building text-rose-500 text-[9px]"></i> Office
+                            </span>
+                          ) : logLoc === 'Home' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700">
+                              <i className="fa-solid fa-house-laptop text-indigo-500 text-[9px]"></i> Home
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">—</span>
+                          )}
                         </td>
                         <td className="py-2 px-3 text-center font-mono text-slate-600">
                           {log.checkInTime || '—'}

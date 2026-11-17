@@ -311,6 +311,28 @@ app.put('/api/users/:id', async (req: Request, res: Response) => {
   res.json(user);
 });
 
+app.delete('/api/users/:id', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const idx = users.findIndex(u => u.id.toLowerCase() === id.toLowerCase());
+  if (idx === -1) {
+    res.status(404).json({ error: 'User not found' });
+    return;
+  }
+  if (users[idx].isBoss) {
+    res.status(403).json({ error: 'Cannot delete Boss account' });
+    return;
+  }
+  const deleted = users.splice(idx, 1)[0];
+
+  try {
+    await supabase.from('users').delete().eq('id', deleted.id);
+  } catch {
+    // ignore
+  }
+
+  res.json({ message: 'Employee deleted', user: deleted });
+});
+
 // Attendance
 app.get('/api/attendance', async (_req: Request, res: Response) => {
   try {

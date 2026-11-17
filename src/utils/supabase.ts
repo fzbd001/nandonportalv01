@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { AttendanceLog, Deliverable, User } from '../types.ts';
+import { AttendanceLog, Deliverable, User, WorkLocation, WorkLocationStore } from '../types.ts';
 
 export const SUPABASE_URL =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
@@ -83,6 +83,18 @@ export async function upsertUserInSupabase(user: User): Promise<boolean> {
       is_boss: user.isBoss,
       password: user.password
     });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Delete user from Supabase
+ */
+export async function deleteUserFromSupabase(userId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('users').delete().eq('id', userId);
     return !error;
   } catch {
     return false;
@@ -257,4 +269,70 @@ export async function fetchStudioAnnouncementFromSupabase(): Promise<string | nu
   } catch {
     return null;
   }
+}
+
+/**
+ * Fetch work locations map (Office / Home logins) from Supabase studio_settings
+ */
+export async function fetchWorkLocationsFromSupabase(): Promise<WorkLocationStore | null> {
+  try {
+    const { data, error } = await supabase
+      .from('studio_settings')
+      .select('value')
+      .eq('key', 'work_locations_v1')
+      .maybeSingle();
+    if (error || !data || !data.value) return null;
+    const parsed = JSON.parse(data.value);
+    if (parsed && typeof parsed === 'object') {
+      return {
+        latestByEmp: parsed.latestByEmp && typeof parsed.latestByEmp === 'object' ? parsed.latestByEmp : {},
+        byDate: parsed.byDate && typeof parsed.byDate === 'object' ? parsed.byDate : {},
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Save work locations map in Supabase studio_settings
+ */
+export async function saveWorkLocationsInSupabase(store: WorkLocationStore): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('studio_settings').upsert({
+      key: 'work_locations_v1',
+      value: JSON.stringify(store),
+      updated_at: new Date().toISOString()
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Fetch-merge-upsert a single employee's work location so concurrent logins do not overwrite each other
+ */
+export async function upsertEmployeeWorkLocationInSupabase(
+  empId: string,
+  date: string,
+  loginTime: string,
+  location: WorkLocation,
+  fallbackStore?: WorkLocationStore
+): Promise<WorkLocationStore> {
+  const remote = await fetchWorkLocationsFromSupabase();
+  const base: WorkLocationStore = remote || fallbackStore || { latestByEmp: {}, byDate: {} };
+  const next: WorkLocationStore = {
+    latestByEmp: {
+      ...base.latestByEmp,
+      [empId]: { location, loginTime, date }
+    },
+    byDate: {
+      ...base.byDate,
+      [`${empId}__${date}`]: location
+    }
+  };
+  await saveWorkLocationsInSupabase(next);
+  return next;
 }
