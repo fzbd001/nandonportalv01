@@ -234,10 +234,10 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="w-8 h-8 rounded-full bg-rose-600 text-white flex items-center justify-center text-xs font-bold shadow-sm">
               {currentUser.name.charAt(0).toUpperCase()}
             </div>
-            <div className="text-left hidden sm:block">
-              <div className="text-xs font-bold text-slate-900 leading-tight">{currentUser.name}</div>
-              <div className="text-[10px] text-slate-500 font-semibold leading-none">
-                {currentUser.isBoss ? 'Boss' : 'Employee'}
+            <div className="text-left hidden sm:block max-w-[180px]">
+              <div className="text-xs font-bold text-slate-900 leading-tight truncate">{currentUser.name}</div>
+              <div className="text-[10px] text-slate-500 font-semibold leading-tight truncate">
+                {currentUser.isBoss ? 'Boss' : (currentUser.role || 'Employee')}
               </div>
             </div>
             <i className="fa-solid fa-chevron-down text-[10px] text-slate-400"></i>

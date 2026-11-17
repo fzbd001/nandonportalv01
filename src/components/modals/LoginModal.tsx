@@ -145,7 +145,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             type="submit"
             className="w-full py-3 rounded-2xl bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-600 hover:to-rose-700 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-rose-500/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
-            <i className="fa-solid fa-arrow-right-to-bracket text-xs"></i> <span>Sign In to Studio</span>
+            <i className="fa-solid fa-arrow-right-to-bracket text-xs"></i> <span>SIGN IN</span>
           </button>
         </form>
 
