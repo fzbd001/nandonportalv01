@@ -71,7 +71,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 }`}
               >
                 <i className={`fa-solid fa-building text-xs ${workLocation === 'Office' ? 'text-rose-400' : 'text-rose-500'}`}></i>
-                <span>Login from Office</span>
+                <span>From Office</span>
               </button>
               <button
                 type="button"
@@ -83,7 +83,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 }`}
               >
                 <i className={`fa-solid fa-house-laptop text-xs ${workLocation === 'Home' ? 'text-indigo-400' : 'text-indigo-500'}`}></i>
-                <span>Login from Home</span>
+                <span>From Home</span>
               </button>
             </div>
           </div>
