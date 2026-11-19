@@ -93,7 +93,7 @@ export const WeeklyHeatmapChart: React.FC<WeeklyHeatmapChartProps> = ({
       if (log) {
         if (day.isToday && log.isCheckedIn) {
           const startMs = log.checkInTimestamp || now.getTime();
-          mins = Math.max(0, Math.round((now.getTime() - startMs) / 60000));
+          mins = (log.totalMinutes || 0) + Math.max(0, Math.round((now.getTime() - startMs) / 60000));
         } else {
           mins = log.totalMinutes || 0;
         }
@@ -322,7 +322,7 @@ export const WeeklyHeatmapChart: React.FC<WeeklyHeatmapChartProps> = ({
                     if (log) {
                       if (isCheckedIn) {
                         const startMs = log.checkInTimestamp || now.getTime();
-                        minutes = Math.max(0, Math.round((now.getTime() - startMs) / 60000));
+                        minutes = (log.totalMinutes || 0) + Math.max(0, Math.round((now.getTime() - startMs) / 60000));
                       } else {
                         minutes = log.totalMinutes || 0;
                       }

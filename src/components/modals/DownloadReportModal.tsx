@@ -106,7 +106,7 @@ export const DownloadReportModal: React.FC<DownloadReportModalProps> = ({
               <span className="font-mono font-bold text-rose-600 text-xs">Official PDF &amp; CSV</span>
             </div>
             <p className="text-[11px] text-slate-500 leading-relaxed font-normal">
-              Includes Employee Name, ID, Check-in/out, Total Minutes, Work Updates (tasks count &amp; details), and Absent Days count.
+              Includes Employee Name, ID, Work Location (Office/Home), Check-in/out, System Logout status, Detailed Session Breakdown (S1, S2...), Total Minutes, Work Updates, and Absent Days.
             </p>
           </div>
 

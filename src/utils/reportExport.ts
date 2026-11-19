@@ -1,10 +1,36 @@
-import { AttendanceLog, Deliverable, ExportTimeframe, User, WorkLocationStore } from '../types.ts';
-import { getTodayDateString, getWorkLocationForDate } from './storage.ts';
+import {
+  AttendanceLog,
+  AttendanceMetaStore,
+  Deliverable,
+  ExportTimeframe,
+  User,
+  WorkLocationStore
+} from '../types.ts';
+import {
+  formatDurationShort,
+  formatSessionsSummary,
+  getDayAttendanceMeta,
+  getTodayDateString,
+  getWorkLocationForDate
+} from './storage.ts';
+
+export interface DailySessionReportRow {
+  date: string;
+  dateLabel: string;
+  location: string;
+  sessionsSummary: string;
+  systemLogout: boolean;
+  totalMinutes: number;
+}
 
 export interface StaffPeriodStats {
   checkIn: string;
   checkOut: string;
   workLocation: string;
+  logoutStatus: string;
+  hasSystemLogout: boolean;
+  sessionsSummary: string;
+  dailySessionRows: DailySessionReportRow[];
   totalMinutes: number;
   daysAbsent: number;
   totalTasks: number;
@@ -17,7 +43,8 @@ export function calculateStaffPeriodStats(
   deliverables: Deliverable[],
   empId: string,
   timeframe: ExportTimeframe,
-  workLocations?: WorkLocationStore
+  workLocations?: WorkLocationStore,
+  attendanceMeta?: AttendanceMetaStore
 ): StaffPeriodStats {
   const today = getTodayDateString();
   const numDays = timeframe === 'daily' ? 1 : (timeframe === 'weekly' ? 7 : 30);
@@ -67,14 +94,93 @@ export function calculateStaffPeriodStats(
     }
   }
 
-  const totalMins = relevantLogs.reduce((acc, l) => acc + (l.totalMinutes || 0), 0);
+  // Compute sessions & system logout status across targetDates
+  let systemLogoutDays = 0;
+  const dailySessionRows: DailySessionReportRow[] = [];
+
+  targetDates.forEach((dateStr) => {
+    const logForDate = relevantLogs.find((l) => l.date === dateStr);
+    const metaForDate = getDayAttendanceMeta(attendanceMeta, empId, dateStr);
+    const locForDate = getWorkLocationForDate(workLocations, empId, dateStr);
+    const isSysOut = Boolean(metaForDate?.systemLogout);
+    if (isSysOut) systemLogoutDays++;
+
+    let summary = formatSessionsSummary(metaForDate?.sessions);
+    if (!summary && logForDate && logForDate.checkInTime) {
+      if (logForDate.isCheckedIn) {
+        summary = `S1: ${logForDate.checkInTime}–Active`;
+      } else if (logForDate.checkOutTime) {
+        summary = `S1: ${logForDate.checkInTime}–${logForDate.checkOutTime} (${formatDurationShort(logForDate.totalMinutes || 0)})${isSysOut ? ' [System Logout]' : ''}`;
+      }
+    }
+
+    if (summary || isSysOut) {
+      const dateLabel = logForDate?.dateFormatted || dateStr;
+      dailySessionRows.push({
+        date: dateStr,
+        dateLabel,
+        location: locForDate === 'Office' ? 'Office' : locForDate === 'Home' ? 'Home' : '—',
+        sessionsSummary: summary || (isSysOut ? 'System Logout' : '—'),
+        systemLogout: isSysOut,
+        totalMinutes: logForDate?.totalMinutes || 0
+      });
+    }
+  });
+
+  const todayMeta = getDayAttendanceMeta(attendanceMeta, empId, today);
+  const todaySystemLogout = Boolean(todayMeta?.systemLogout && !todayLog?.isCheckedIn);
+
+  let logoutStatus = 'Normal';
+  if (timeframe === 'daily') {
+    if (todaySystemLogout) {
+      logoutStatus = 'System Logout';
+    } else if (todayLog?.isCheckedIn) {
+      logoutStatus = 'Active Duty';
+    } else if (todayLog?.checkOutTime) {
+      logoutStatus = 'Manual Check-Out';
+    } else {
+      logoutStatus = 'Not Checked In';
+    }
+  } else {
+    logoutStatus = systemLogoutDays > 0 ? `System Logout (${systemLogoutDays}d)` : 'Normal';
+  }
+
+  const sessionsSummary =
+    timeframe === 'daily'
+      ? (dailySessionRows[0]?.sessionsSummary || 'No sessions')
+      : (dailySessionRows.length > 0
+          ? dailySessionRows.map((r) => `${r.dateLabel}: ${r.sessionsSummary}`).join(' | ')
+          : 'No sessions');
+
+  const totalMins = relevantLogs.reduce((acc, l) => {
+    if (l.date === today && l.isCheckedIn && l.checkInTimestamp) {
+      const liveMins = Math.max(0, Math.round((now.getTime() - l.checkInTimestamp) / 60000));
+      return acc + (l.totalMinutes || 0) + liveMins;
+    }
+    return acc + (l.totalMinutes || 0);
+  }, 0);
+
   const relevantTasks = deliverables.filter(d => d.empId === empId && targetDates.includes(d.date));
   const completedCount = relevantTasks.filter(t => t.progress >= 100).length;
 
+  const checkInDisplay =
+    todayMeta?.sessions && todayMeta.sessions.length > 0
+      ? todayMeta.sessions[0].checkInTime
+      : (todayLog ? (todayLog.checkInTime || '--:--') : '--:--');
+
+  const checkOutBase = todayLog ? (todayLog.checkOutTime || '--:--') : '--:--';
+  const checkOutDisplay = todaySystemLogout
+    ? `${todayMeta?.systemLogoutTime || checkOutBase} (System Logout)`
+    : checkOutBase;
+
   return {
-    checkIn: todayLog ? (todayLog.checkInTime || '--:--') : '--:--',
-    checkOut: todayLog ? (todayLog.checkOutTime || '--:--') : '--:--',
+    checkIn: checkInDisplay,
+    checkOut: checkOutDisplay,
     workLocation,
+    logoutStatus,
+    hasSystemLogout: timeframe === 'daily' ? todaySystemLogout : systemLogoutDays > 0,
+    sessionsSummary,
+    dailySessionRows,
     totalMinutes: totalMins,
     daysAbsent: absentCount,
     totalTasks: relevantTasks.length,
@@ -89,7 +195,8 @@ export function executeExportCSV(
   deliverables: Deliverable[],
   filterMember: string,
   timeframe: ExportTimeframe,
-  workLocations?: WorkLocationStore
+  workLocations?: WorkLocationStore,
+  attendanceMeta?: AttendanceMetaStore
 ) {
   const today = getTodayDateString();
   let targetUsers = users.filter(u => !u.isBoss);
@@ -97,14 +204,15 @@ export function executeExportCSV(
     targetUsers = targetUsers.filter(u => u.id === filterMember);
   }
 
-  let csv = "Employee Name,Employee ID,Designation,Period,Work Location,Check In,Check Out,Total Minutes,Total Hours,Days Absent,Tasks Count,Completed Tasks,Deliverables Breakdown\n";
+  let csv = "Employee Name,Employee ID,Designation,Period,Work Location,Check In,Check Out,Logout Status,Shift Sessions Breakdown,Total Minutes,Total Hours,Days Absent,Tasks Count,Completed Tasks,Deliverables Breakdown\n";
 
   targetUsers.forEach(staff => {
-    const stats = calculateStaffPeriodStats(attendanceLogs, deliverables, staff.id, timeframe, workLocations);
+    const stats = calculateStaffPeriodStats(attendanceLogs, deliverables, staff.id, timeframe, workLocations, attendanceMeta);
     const tasksSummary = stats.tasks.map(t => `${t.title} (${t.progress}%)`).join('; ') || 'No tasks';
     const cleanTasks = tasksSummary.replace(/"/g, '""');
+    const cleanSessions = stats.sessionsSummary.replace(/"/g, '""');
 
-    csv += `"${staff.name}","${staff.id}","${staff.role}","${timeframe.toUpperCase()}","${stats.workLocation}","${stats.checkIn}","${stats.checkOut}","${stats.totalMinutes}","${(stats.totalMinutes / 60).toFixed(1)}","${stats.daysAbsent}","${stats.totalTasks}","${stats.completedTasks}","${cleanTasks}"\n`;
+    csv += `"${staff.name}","${staff.id}","${staff.role}","${timeframe.toUpperCase()}","${stats.workLocation}","${stats.checkIn}","${stats.checkOut}","${stats.logoutStatus}","${cleanSessions}","${stats.totalMinutes}","${(stats.totalMinutes / 60).toFixed(1)}","${stats.daysAbsent}","${stats.totalTasks}","${stats.completedTasks}","${cleanTasks}"\n`;
   });
 
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -138,7 +246,8 @@ export function generateAndPrintPDFReport(
   filterMember: string,
   timeframe: ExportTimeframe,
   savedLogo: string | null,
-  workLocations?: WorkLocationStore
+  workLocations?: WorkLocationStore,
+  attendanceMeta?: AttendanceMetaStore
 ) {
   const timeframeTitle = timeframe.charAt(0).toUpperCase() + timeframe.slice(1);
 
@@ -152,12 +261,27 @@ export function generateAndPrintPDFReport(
     : `<div style="width:48px; height:48px; border-radius:10px; background:#e11d48; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:11px;">NANDAN</div>`;
 
   const staffCardsHtml = targetUsers.map(staff => {
-    const stats = calculateStaffPeriodStats(attendanceLogs, deliverables, staff.id, timeframe, workLocations);
+    const stats = calculateStaffPeriodStats(attendanceLogs, deliverables, staff.id, timeframe, workLocations, attendanceMeta);
     const hours = Math.floor(stats.totalMinutes / 60);
     const mins = stats.totalMinutes % 60;
     const formattedTime = `${stats.totalMinutes} mins (${hours}h ${mins}m)`;
     const isHomeReport = stats.workLocation.includes('Home');
     const isOfficeReport = stats.workLocation.includes('Office');
+
+    const sessionsHtml = stats.dailySessionRows.length > 0 ? `
+      <div style="margin-bottom: 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px;">
+        <div style="font-size: 9px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">Shift Sessions Breakdown:</div>
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          ${stats.dailySessionRows.map(row => `
+            <div style="font-size: 11px; color: #1e293b; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;">
+              <span style="font-weight: 700; color: #0f172a; min-width: 78px;">${escapeHtml(row.dateLabel)}</span>
+              <span style="font-family: monospace; font-size: 10.5px; color: #334155;">${escapeHtml(row.sessionsSummary)}</span>
+              ${row.systemLogout ? `<span style="background: #fff1f2; color: #e11d48; border: 1px solid #fecdd3; font-size: 9px; font-weight: 800; padding: 1px 6px; border-radius: 999px;">System Logout</span>` : ''}
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    ` : '';
 
     const taskRowsHtml = stats.tasks.length > 0 ? stats.tasks.map((t, idx) => `
       <tr style="border-bottom: 1px solid #f1f5f9; font-size: 11px;">
@@ -177,6 +301,11 @@ export function generateAndPrintPDFReport(
             <p style="margin: 3px 0 0; font-size: 11px; color: #64748b; font-weight: 600;">${escapeHtml(staff.role)} &bull; <span style="font-family: monospace; color:#0f172a; background:#f1f5f9; padding: 1px 5px; border-radius:4px;">${staff.id}</span></p>
           </div>
           <div style="text-align: right; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end;">
+            ${stats.hasSystemLogout ? `
+              <span style="display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 10px; font-weight: 800; background:#fff1f2; color:#e11d48; border:1px solid #fda4af;">
+                ${escapeHtml(stats.logoutStatus)}
+              </span>
+            ` : ''}
             <span style="display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 10px; font-weight: 800; ${isHomeReport && !isOfficeReport ? 'background:#eef2ff; color:#4338ca; border:1px solid #c7d2fe;' : isOfficeReport ? 'background:#0f172a; color:#ffffff; border:1px solid #0f172a;' : 'background:#f1f5f9; color:#64748b; border:1px solid #cbd5e1;'}">
               ${escapeHtml(stats.workLocation)}
             </span>
@@ -186,18 +315,18 @@ export function generateAndPrintPDFReport(
           </div>
         </div>
 
-        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px;">
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px;">
           <div style="background: #f8fafc; padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0;">
             <div style="font-size: 9px; font-weight: 800; color: #94a3b8; text-transform: uppercase;">Work Location</div>
             <div style="font-size: 12px; font-weight: 800; color: ${isHomeReport && !isOfficeReport ? '#4338ca' : '#0f172a'}; margin-top: 2px;">${escapeHtml(stats.workLocation)}</div>
           </div>
           <div style="background: #f8fafc; padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0;">
             <div style="font-size: 9px; font-weight: 800; color: #94a3b8; text-transform: uppercase;">Check In</div>
-            <div style="font-size: 12px; font-weight: 700; color: #1e293b; font-family: monospace; margin-top: 2px;">${stats.checkIn}</div>
+            <div style="font-size: 12px; font-weight: 700; color: #1e293b; font-family: monospace; margin-top: 2px;">${escapeHtml(stats.checkIn)}</div>
           </div>
           <div style="background: #f8fafc; padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0;">
-            <div style="font-size: 9px; font-weight: 800; color: #94a3b8; text-transform: uppercase;">Check Out</div>
-            <div style="font-size: 12px; font-weight: 700; color: #1e293b; font-family: monospace; margin-top: 2px;">${stats.checkOut}</div>
+            <div style="font-size: 9px; font-weight: 800; color: #94a3b8; text-transform: uppercase;">Check Out / Status</div>
+            <div style="font-size: 11.5px; font-weight: 700; color: ${stats.hasSystemLogout ? '#e11d48' : '#1e293b'}; font-family: monospace; margin-top: 2px;">${escapeHtml(stats.checkOut)}</div>
           </div>
           <div style="background: #f8fafc; padding: 8px 10px; border-radius: 8px; border: 1px solid #e2e8f0;">
             <div style="font-size: 9px; font-weight: 800; color: #94a3b8; text-transform: uppercase;">Total Minutes</div>
@@ -212,6 +341,8 @@ export function generateAndPrintPDFReport(
             <div style="font-size: 12px; font-weight: 800; color: ${stats.daysAbsent > 0 ? '#e11d48' : '#059669'}; margin-top: 2px;">${stats.daysAbsent} Day${stats.daysAbsent === 1 ? '' : 's'}</div>
           </div>
         </div>
+
+        ${sessionsHtml}
 
         <div style="margin-top: 10px;">
           <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px;">Tasks & Project Deliverables Breakdown:</div>

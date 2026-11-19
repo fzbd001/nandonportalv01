@@ -57,6 +57,28 @@ export interface WorkLocationStore {
   byDate: Record<string, WorkLocation>; // key: `${empId}__${date}`
 }
 
+export interface WorkSession {
+  id: string;
+  checkInTime: string;
+  checkInTimestamp: number;
+  checkOutTime: string | null;
+  minutes: number;
+  location: WorkLocation;
+  isSystemLogout?: boolean;
+}
+
+export interface DayAttendanceMeta {
+  sessions: WorkSession[];
+  systemLogout?: boolean;
+  systemLogoutTime?: string;
+  reCheckInAllowed?: boolean;
+  reCheckInGrantedAt?: string;
+}
+
+export interface AttendanceMetaStore {
+  byKey: Record<string, DayAttendanceMeta>; // key: `${empId}__${date}`
+}
+
 export const CREATIVE_CATEGORIES = [
   'Video Editing',
   'Graphic Design',

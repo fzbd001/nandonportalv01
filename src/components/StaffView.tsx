@@ -1,10 +1,27 @@
 import React, { useEffect, useState } from 'react';
-import { AttendanceLog, CREATIVE_CATEGORIES, Deliverable, User, WorkLocation } from '../types.ts';
+import {
+  AttendanceLog,
+  AttendanceMetaStore,
+  CREATIVE_CATEGORIES,
+  DayAttendanceMeta,
+  Deliverable,
+  User,
+  WorkLocation,
+  WorkLocationStore
+} from '../types.ts';
+import {
+  formatSessionLabel,
+  getDayAttendanceMeta,
+  getWorkLocationForDate
+} from '../utils/storage.ts';
 
 interface StaffViewProps {
   currentUser: User;
   todayLog: AttendanceLog | undefined;
   todayWorkLocation?: WorkLocation | null;
+  todayMeta?: DayAttendanceMeta | null;
+  attendanceMeta: AttendanceMetaStore;
+  workLocations: WorkLocationStore;
   staff5DayLogs: AttendanceLog[];
   deliverables: Deliverable[];
   onCheckIn: () => void;
@@ -19,6 +36,9 @@ export const StaffView: React.FC<StaffViewProps> = ({
   currentUser,
   todayLog,
   todayWorkLocation,
+  todayMeta,
+  attendanceMeta,
+  workLocations,
   staff5DayLogs,
   deliverables,
   onCheckIn,
@@ -35,8 +55,25 @@ export const StaffView: React.FC<StaffViewProps> = ({
   const [activeDurationText, setActiveDurationText] = useState('0h 00m active duty');
 
   const isCheckedIn = Boolean(todayLog?.isCheckedIn);
+  const effectiveLocation: WorkLocation = todayWorkLocation || 'Office';
+  const hasCheckedOutToday = Boolean(
+    todayLog &&
+    !isCheckedIn &&
+    (todayLog.checkOutTime ||
+      todayLog.totalMinutes > 0 ||
+      (todayMeta?.sessions?.length ?? 0) > 0 ||
+      todayMeta?.systemLogout)
+  );
+  const isSystemLogoutToday = Boolean(todayMeta?.systemLogout && !isCheckedIn);
+  const isOfficeReCheckInBlocked = Boolean(
+    !currentUser.isBoss &&
+    effectiveLocation === 'Office' &&
+    hasCheckedOutToday
+  );
+  const isCheckInDisabled = isCheckedIn || isOfficeReCheckInBlocked;
+  const isDeliverablesLocked = Boolean(!currentUser.isBoss && !isCheckedIn);
 
-  // Live timer for active shift
+  // Live timer for active shift (accumulates completed sessions + active session)
   useEffect(() => {
     if (!isCheckedIn || !todayLog?.checkInTimestamp) {
       if (todayLog && todayLog.totalMinutes > 0) {
@@ -54,8 +91,10 @@ export const StaffView: React.FC<StaffViewProps> = ({
     }
 
     const updateTimer = () => {
+      const priorMins = todayLog.totalMinutes || 0;
       const diffMs = Math.max(0, Date.now() - todayLog.checkInTimestamp);
-      const totalMins = Math.floor(diffMs / 60000);
+      const currentSessionMins = Math.floor(diffMs / 60000);
+      const totalMins = priorMins + currentSessionMins;
       const hours = Math.floor(totalMins / 60);
       const remMins = totalMins % 60;
       if (hours > 0) {
@@ -78,6 +117,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isDeliverablesLocked) return;
     if (!taskTitle.trim()) return;
     onSubmitDeliverable(taskCategory, taskTitle.trim(), taskNotes.trim(), taskProgress);
     setTaskTitle('');
@@ -128,22 +168,48 @@ export const StaffView: React.FC<StaffViewProps> = ({
             )}
             <div
               className={`px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 transition-all ${
-                isCheckedIn ? 'duty-pill-active' : 'duty-pill-inactive'
+                isCheckedIn
+                  ? 'duty-pill-active'
+                  : isSystemLogoutToday
+                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                  : 'duty-pill-inactive'
               }`}
             >
               <span
                 className={`w-2 h-2 rounded-full ${
-                  isCheckedIn ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'
+                  isCheckedIn
+                    ? 'bg-emerald-500 animate-pulse'
+                    : isSystemLogoutToday
+                    ? 'bg-rose-500'
+                    : 'bg-slate-400'
                 }`}
               ></span>
-              <span>{isCheckedIn ? 'On Active Duty' : 'Checked Out'}</span>
+              <span>
+                {isCheckedIn
+                  ? 'On Active Duty'
+                  : isSystemLogoutToday
+                  ? 'System Logout'
+                  : hasCheckedOutToday
+                  ? 'Checked Out'
+                  : 'Not Checked In'}
+              </span>
             </div>
             <button
               onClick={onCheckIn}
-              disabled={isCheckedIn}
+              disabled={isCheckInDisabled}
+              title={
+                isOfficeReCheckInBlocked
+                  ? 'Office multiple check-in requires Boss permission'
+                  : 'Check In'
+              }
               className="btn-pill-checkin px-6 py-2.5 text-xs sm:text-sm flex items-center gap-2"
             >
-              <i className="fa-solid fa-arrow-right-to-bracket text-xs"></i> Check In
+              <i
+                className={`fa-solid ${
+                  isOfficeReCheckInBlocked ? 'fa-lock' : 'fa-arrow-right-to-bracket'
+                } text-xs`}
+              ></i>{' '}
+              {isOfficeReCheckInBlocked ? 'Boss Permission Needed' : 'Check In'}
             </button>
             <button
               onClick={onCheckOut}
@@ -155,19 +221,66 @@ export const StaffView: React.FC<StaffViewProps> = ({
           </div>
         </div>
 
+        {/* Policy & Permission Notice Strip */}
+        {isSystemLogoutToday && (
+          <div className="p-3 rounded-2xl bg-rose-50/90 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2.5">
+            <i className="fa-solid fa-power-off text-rose-600 flex-shrink-0"></i>
+            <span>
+              <strong>System Logout (9-Hour Office Limit):</strong> You were automatically checked out after 9 hours. Contact your Studio Director (Boss) — once Boss grants permission, your shift will be automatically restored to Checked In.
+            </span>
+          </div>
+        )}
+        {!isSystemLogoutToday && isOfficeReCheckInBlocked && (
+          <div className="p-3 rounded-2xl bg-amber-50/90 border border-amber-200 text-amber-900 text-xs font-semibold flex items-center gap-2.5">
+            <i className="fa-solid fa-shield-halved text-amber-600 flex-shrink-0"></i>
+            <span>
+              <strong>Boss Permission Needed:</strong> Multiple check-ins from Office are locked after Check-Out. Contact your Studio Director (Boss) — once approved, you will be automatically set back to Checked In (no need to Check In again) and your total shift time for today will keep adding up until you Check Out at the end of office time.
+            </span>
+          </div>
+        )}
+        {!currentUser.isBoss && effectiveLocation === 'Office' && isCheckedIn && todayMeta?.reCheckInAllowed && (
+          <div className="p-3 rounded-2xl bg-emerald-50/90 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center gap-2.5">
+            <i className="fa-solid fa-unlock-keyhole text-emerald-600 flex-shrink-0"></i>
+            <span>
+              <strong>Boss Approved — Shift Resumed{todayMeta.reCheckInGrantedAt ? ` (${todayMeta.reCheckInGrantedAt})` : ''}:</strong> You are back in Checked-In status automatically. No need to Check In again — today&apos;s total time is being added together. Click Check Out when your office time ends.
+            </span>
+          </div>
+        )}
+        {!currentUser.isBoss && effectiveLocation === 'Office' && isCheckedIn && !todayMeta?.reCheckInAllowed && (
+          <div className="px-3.5 py-2 rounded-2xl bg-slate-50/90 border border-slate-200/80 text-slate-600 text-[11px] font-semibold flex items-center gap-2">
+            <i className="fa-regular fa-clock text-rose-500"></i>
+            <span>Office 9-Hour Policy Active: System will automatically Check-Out &amp; Logout if shift exceeds 9 hours.</span>
+          </div>
+        )}
+        {!currentUser.isBoss && effectiveLocation === 'Home' && (
+          <div className="px-3.5 py-2 rounded-2xl bg-indigo-50/70 border border-indigo-200/80 text-indigo-800 text-[11px] font-semibold flex items-center gap-2">
+            <i className="fa-solid fa-house-laptop text-indigo-500"></i>
+            <span>Work from Home Mode: Multiple Check-In &amp; Check-Out enabled — all sessions today add up automatically with no auto-logout.</span>
+          </div>
+        )}
+
         {/* Attendance Metrics Grid (4 Stat Cards) */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 pt-1">
           <div className="stat-card rounded-2xl p-4 flex flex-col justify-between">
             <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">CHECKED IN</span>
             <span className="text-base sm:text-lg font-mono font-bold text-slate-800 mt-1">
-              {todayLog?.checkInTime || '--:--'}
+              {todayMeta?.sessions && todayMeta.sessions.length > 0
+                ? todayMeta.sessions[0].checkInTime
+                : (todayLog?.checkInTime || '--:--')}
             </span>
           </div>
           <div className="stat-card rounded-2xl p-4 flex flex-col justify-between">
             <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">CHECKED OUT</span>
-            <span className="text-base sm:text-lg font-mono font-bold text-slate-800 mt-1">
-              {todayLog?.checkOutTime || '--:--'}
-            </span>
+            <div className="flex items-center gap-2 flex-wrap mt-1">
+              <span className="text-base sm:text-lg font-mono font-bold text-slate-800">
+                {todayLog?.checkOutTime || '--:--'}
+              </span>
+              {isSystemLogoutToday && (
+                <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-rose-50 text-rose-600 border border-rose-200">
+                  System Logout
+                </span>
+              )}
+            </div>
           </div>
           <div className="stat-card rounded-2xl p-4 flex flex-col justify-between">
             <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">SHIFT STATUS</span>
@@ -194,26 +307,52 @@ export const StaffView: React.FC<StaffViewProps> = ({
         {/* Left Column: Log Daily Deliverable Form */}
         <div className="lg:col-span-5 glass-panel rounded-3xl p-5 sm:p-6 flex flex-col justify-between">
           <div>
-            <div className="flex items-center gap-3 mb-5">
-              <div className="w-8 h-8 rounded-full bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center font-bold text-sm shadow-sm">
-                +
+            <div className="flex items-center justify-between gap-2 mb-5">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center font-bold text-sm shadow-sm">
+                  {isDeliverablesLocked ? <i className="fa-solid fa-lock text-xs"></i> : '+'}
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-extrabold text-slate-900">Log Daily Deliverable</h3>
+                  <p className="text-[11px] text-slate-500 font-medium">Track projects &amp; daily work progress</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-base sm:text-lg font-extrabold text-slate-900">Log Daily Deliverable</h3>
-                <p className="text-[11px] text-slate-500 font-medium">Track projects &amp; daily work progress</p>
-              </div>
+              {isDeliverablesLocked && (
+                <span className="text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full bg-rose-50 text-rose-600 border border-rose-200 flex items-center gap-1 flex-shrink-0">
+                  <i className="fa-solid fa-lock text-[9px]"></i> Locked
+                </span>
+              )}
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            {isDeliverablesLocked && (
+              <div className="mb-4 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-start gap-2.5">
+                <i className="fa-solid fa-lock text-rose-500 mt-0.5 flex-shrink-0"></i>
+                <div>
+                  <div className="font-extrabold">
+                    {hasCheckedOutToday ? 'Deliverables Locked After Check-Out' : 'Check In Required Before Submitting'}
+                  </div>
+                  <p className="text-[11px] font-medium text-rose-600 mt-0.5">
+                    {hasCheckedOutToday
+                      ? effectiveLocation === 'Office'
+                        ? 'You have checked out from Office. Once Boss grants permission, you will be automatically restored to Checked In and deliverables will unlock.'
+                        : 'You have checked out. You must Check In again to submit or update deliverables.'
+                      : 'You have not Checked In yet. Please click Check In first — deliverables can only be submitted while Checked In.'}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className={`space-y-4 ${isDeliverablesLocked ? 'opacity-60 pointer-events-none select-none' : ''}`}>
               <div>
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1.5">
                   NANDAN Creative Category
                 </label>
                 <div className="relative">
                   <select
+                    disabled={isDeliverablesLocked}
                     value={taskCategory}
                     onChange={(e) => setTaskCategory(e.target.value)}
-                    className="w-full bg-white/90 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/40"
+                    className="w-full bg-white/90 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/40 disabled:bg-slate-100"
                   >
                     {CREATIVE_CATEGORIES.map((cat) => (
                       <option key={cat} value={cat}>
@@ -231,10 +370,11 @@ export const StaffView: React.FC<StaffViewProps> = ({
                 <input
                   type="text"
                   required
+                  disabled={isDeliverablesLocked}
                   value={taskTitle}
                   onChange={(e) => setTaskTitle(e.target.value)}
                   placeholder="e.g. Daily Weather Card Update & Export"
-                  className="w-full bg-white/90 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/40 placeholder-slate-400"
+                  className="w-full bg-white/90 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/40 placeholder-slate-400 disabled:bg-slate-100"
                 />
               </div>
 
@@ -244,10 +384,11 @@ export const StaffView: React.FC<StaffViewProps> = ({
                 </label>
                 <textarea
                   rows={3}
+                  disabled={isDeliverablesLocked}
                   value={taskNotes}
                   onChange={(e) => setTaskNotes(e.target.value)}
                   placeholder="Asset links, render status, review notes..."
-                  className="w-full bg-white/90 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/40 placeholder-slate-400 resize-none"
+                  className="w-full bg-white/90 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-rose-500/40 placeholder-slate-400 resize-none disabled:bg-slate-100"
                 ></textarea>
               </div>
 
@@ -262,6 +403,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
                   type="range"
                   min="0"
                   max="100"
+                  disabled={isDeliverablesLocked}
                   value={taskProgress}
                   onChange={(e) => setTaskProgress(parseInt(e.target.value) || 0)}
                 />
@@ -269,9 +411,15 @@ export const StaffView: React.FC<StaffViewProps> = ({
 
               <button
                 type="submit"
-                className="w-full py-3 rounded-2xl bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-600 hover:to-rose-700 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-rose-500/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                disabled={isDeliverablesLocked}
+                className="w-full py-3 rounded-2xl bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-600 hover:to-rose-700 disabled:from-slate-400 disabled:to-slate-500 disabled:shadow-none disabled:cursor-not-allowed text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-rose-500/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
-                <i className="fa-solid fa-paper-plane text-xs"></i> Submit Deliverable
+                <i className={`fa-solid ${isDeliverablesLocked ? 'fa-lock' : 'fa-paper-plane'} text-xs`}></i>{' '}
+                {isDeliverablesLocked
+                  ? hasCheckedOutToday
+                    ? 'Locked — Checked Out'
+                    : 'Locked — Check In Required'
+                  : 'Submit Deliverable'}
               </button>
             </form>
           </div>
@@ -279,22 +427,47 @@ export const StaffView: React.FC<StaffViewProps> = ({
 
         {/* Right Column: Today's Deliverables List */}
         <div id="todays-deliverables-section" className="lg:col-span-7 glass-panel rounded-3xl p-5 sm:p-6 flex flex-col transition-all duration-300">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
             <div>
               <h3 className="text-base sm:text-lg font-extrabold text-slate-900">Today's Deliverables</h3>
               <p className="text-[11px] text-slate-500 font-medium">Your private shift tasks &amp; director directives</p>
             </div>
-            <span className="text-xs font-bold bg-slate-900 text-white px-3 py-1 rounded-full">
-              {userTasks.length} Deliverable{userTasks.length === 1 ? '' : 's'}
-            </span>
+            <div className="flex items-center gap-2">
+              {isDeliverablesLocked && (
+                <span className="text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full bg-rose-50 text-rose-600 border border-rose-200 flex items-center gap-1">
+                  <i className="fa-solid fa-lock text-[9px]"></i>{' '}
+                  {hasCheckedOutToday ? 'Locked (Checked Out)' : 'Check In Required'}
+                </span>
+              )}
+              <span className="text-xs font-bold bg-slate-900 text-white px-3 py-1 rounded-full">
+                {userTasks.length} Deliverable{userTasks.length === 1 ? '' : 's'}
+              </span>
+            </div>
           </div>
+
+          {isDeliverablesLocked && (
+            <div className="mb-4 p-3 rounded-2xl bg-amber-50/90 border border-amber-200 text-amber-900 text-xs font-semibold flex items-center gap-2.5">
+              <i className="fa-solid fa-lock text-amber-600 flex-shrink-0"></i>
+              <span>
+                {hasCheckedOutToday
+                  ? 'Shift Checked Out: Updating, completing, or deleting deliverables is locked until you are Checked In.'
+                  : 'Not Checked In: Please click Check In first to update, complete, or manage your deliverables.'}
+              </span>
+            </div>
+          )}
 
           <div className="space-y-3.5 flex-1 overflow-y-auto max-h-[500px] pr-1">
             {userTasks.length === 0 ? (
               <div className="py-12 text-center text-slate-400">
                 <i className="fa-regular fa-clipboard text-3xl mb-2 text-slate-300"></i>
                 <p className="text-xs font-semibold">No deliverables logged today.</p>
-                <p className="text-[11px] text-slate-400">Use the form on the left to add your first work item.</p>
+                <p className="text-[11px] text-slate-400">
+                  {isDeliverablesLocked
+                    ? hasCheckedOutToday
+                      ? 'You have checked out. Deliverables are locked until you are Checked In.'
+                      : 'Click Check In above to unlock and submit your daily deliverables.'
+                    : 'Use the form on the left to add your first work item.'}
+                </p>
               </div>
             ) : (
               userTasks.map((task) => (
@@ -343,43 +516,58 @@ export const StaffView: React.FC<StaffViewProps> = ({
                       style={{ width: `${task.progress}%` }}
                     ></div>
                   </div>
-                  <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
+                  <div
+                    className={`flex items-center justify-between pt-1 flex-wrap gap-2 ${
+                      isDeliverablesLocked ? 'opacity-55 pointer-events-none select-none' : ''
+                    }`}
+                  >
                     <div className="flex items-center gap-1.5">
                       <button
+                        disabled={isDeliverablesLocked}
                         onClick={() => onAdjustProgress(task.id, -10)}
-                        className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
+                        className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 transition-colors cursor-pointer"
                       >
                         -10%
                       </button>
                       <button
+                        disabled={isDeliverablesLocked}
                         onClick={() => onAdjustProgress(task.id, 10)}
-                        className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
+                        className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 transition-colors cursor-pointer"
                       >
                         +10%
                       </button>
                       <button
+                        disabled={isDeliverablesLocked}
                         onClick={() => onAdjustProgress(task.id, 25)}
-                        className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
+                        className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 transition-colors cursor-pointer"
                       >
                         +25%
                       </button>
                     </div>
                     <div className="flex items-center gap-2">
                       <button
+                        disabled={isDeliverablesLocked}
                         onClick={() => onToggleCompleted(task.id)}
                         className={`px-3 py-1 rounded-full text-[11px] font-bold ${
                           task.progress >= 100
                             ? 'bg-emerald-100 text-emerald-700'
                             : 'bg-slate-100 text-slate-700 hover:bg-emerald-50 hover:text-emerald-700'
-                        } transition-all cursor-pointer`}
+                        } disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer`}
                       >
                         <i className="fa-solid fa-check text-[10px] mr-1"></i>{' '}
                         {task.progress >= 100 ? 'Done' : 'Mark Done'}
                       </button>
                       <button
+                        disabled={isDeliverablesLocked}
                         onClick={() => onDeleteDeliverable(task.id)}
-                        className="text-slate-400 hover:text-rose-600 text-xs px-1 transition-colors cursor-pointer"
-                        title="Delete Task"
+                        className="text-slate-400 hover:text-rose-600 disabled:opacity-30 disabled:cursor-not-allowed text-xs px-1 transition-colors cursor-pointer"
+                        title={
+                          isDeliverablesLocked
+                            ? hasCheckedOutToday
+                              ? 'Locked after Check-Out'
+                              : 'Check In required'
+                            : 'Delete Task'
+                        }
                       >
                         <i className="fa-regular fa-trash-can"></i>
                       </button>
@@ -400,7 +588,7 @@ export const StaffView: React.FC<StaffViewProps> = ({
               5-Day Attendance Log
             </h3>
             <p className="text-xs text-slate-500 font-medium mt-0.5">
-              Recent shift check-in, check-out history and duration
+              Recent shift check-in, check-out, sessions &amp; system logout history
             </p>
           </div>
           <span className="text-[11px] font-bold px-3 py-1 bg-slate-100 border border-slate-200 text-slate-600 rounded-full w-fit">
@@ -412,7 +600,8 @@ export const StaffView: React.FC<StaffViewProps> = ({
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-slate-200/80 text-[11px] uppercase tracking-wider font-bold text-slate-400">
-                <th className="py-3.5 px-4 font-bold">Staff / Date</th>
+                <th className="py-3.5 px-4 font-bold">Staff / Date &amp; Sessions</th>
+                <th className="py-3.5 px-4 font-bold text-center">Location</th>
                 <th className="py-3.5 px-4 font-bold text-center">Check in</th>
                 <th className="py-3.5 px-4 font-bold text-center">Check out</th>
                 <th className="py-3.5 px-4 font-bold text-right">Time</th>
@@ -421,12 +610,16 @@ export const StaffView: React.FC<StaffViewProps> = ({
             <tbody className="text-xs divide-y divide-slate-100">
               {staff5DayLogs.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="py-6 text-center text-slate-400 text-xs">
+                  <td colSpan={5} className="py-6 text-center text-slate-400 text-xs">
                     No recent shift logs recorded yet.
                   </td>
                 </tr>
               ) : (
                 staff5DayLogs.map((log) => {
+                  const dayMeta = getDayAttendanceMeta(attendanceMeta, currentUser.id, log.date);
+                  const logLoc = getWorkLocationForDate(workLocations, currentUser.id, log.date);
+                  const isSysLogout = Boolean(dayMeta?.systemLogout && !log.isCheckedIn);
+
                   let timeBadge = null;
                   if (log.isCheckedIn) {
                     timeBadge = (
@@ -454,12 +647,52 @@ export const StaffView: React.FC<StaffViewProps> = ({
                         <div className="text-[11px] text-slate-500 font-medium mt-0.5">
                           {log.dateFormatted || log.date}
                         </div>
+                        {dayMeta?.sessions && dayMeta.sessions.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {dayMeta.sessions.map((sess, idx) => (
+                              <span
+                                key={sess.id}
+                                className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-mono font-semibold border ${
+                                  sess.isSystemLogout
+                                    ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                    : !sess.checkOutTime
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    : 'bg-slate-50 text-slate-600 border-slate-200'
+                                }`}
+                              >
+                                {formatSessionLabel(sess, idx)}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        {logLoc === 'Office' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-900 text-white">
+                            <i className="fa-solid fa-building text-rose-400 text-[9px]"></i> Office
+                          </span>
+                        ) : logLoc === 'Home' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            <i className="fa-solid fa-house-laptop text-indigo-500 text-[9px]"></i> Home
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
                       </td>
                       <td className="py-3.5 px-4 text-center font-mono font-bold text-xs text-slate-700">
-                        {log.checkInTime || '—'}
+                        {dayMeta?.sessions && dayMeta.sessions.length > 0
+                          ? dayMeta.sessions[0].checkInTime
+                          : (log.checkInTime || '—')}
                       </td>
-                      <td className="py-3.5 px-4 text-center font-mono font-bold text-xs text-slate-700">
-                        {log.checkOutTime || '—'}
+                      <td className="py-3.5 px-4 text-center">
+                        <div className="font-mono font-bold text-xs text-slate-700">
+                          {log.checkOutTime || '—'}
+                        </div>
+                        {isSysLogout && (
+                          <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-rose-50 text-rose-600 border border-rose-200">
+                            <i className="fa-solid fa-power-off text-[8px]"></i> System Logout
+                          </span>
+                        )}
                       </td>
                       <td className="py-3.5 px-4 text-right">{timeBadge}</td>
                     </tr>

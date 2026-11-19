@@ -1,12 +1,19 @@
 import React from 'react';
-import { AttendanceLog, Deliverable, User, WorkLocationStore } from '../../types.ts';
-import { getTodayDateString, getWorkLocationForDate } from '../../utils/storage.ts';
+import { AttendanceLog, AttendanceMetaStore, Deliverable, User, WorkLocationStore } from '../../types.ts';
+import {
+  formatSessionLabel,
+  getDayAttendanceMeta,
+  getTodayDateString,
+  getWorkLocationForDate
+} from '../../utils/storage.ts';
 
 interface InspectModalProps {
   user: User;
   deliverables: Deliverable[];
   attendanceLogs: AttendanceLog[];
   workLocations: WorkLocationStore;
+  attendanceMeta: AttendanceMetaStore;
+  onToggleReCheckInPermission?: (empId: string, allow: boolean) => void;
   onClose: () => void;
 }
 
@@ -15,10 +22,25 @@ export const InspectModal: React.FC<InspectModalProps> = ({
   deliverables,
   attendanceLogs,
   workLocations,
+  attendanceMeta,
+  onToggleReCheckInPermission,
   onClose
 }) => {
   const today = getTodayDateString();
   const todayLoc = getWorkLocationForDate(workLocations, user.id, today);
+  const todayLog = attendanceLogs.find(a => a.empId === user.id && a.date === today);
+  const todayMeta = getDayAttendanceMeta(attendanceMeta, user.id, today);
+  const isTodaySystemLogout = Boolean(todayMeta?.systemLogout && !todayLog?.isCheckedIn);
+  const hasCheckedOutToday = Boolean(
+    todayLog &&
+    !todayLog.isCheckedIn &&
+    (todayLog.checkOutTime || todayLog.totalMinutes > 0 || (todayMeta?.sessions?.length ?? 0) > 0 || todayMeta?.systemLogout)
+  );
+  const canGrantReCheckIn = Boolean(
+    onToggleReCheckInPermission && (todayLoc || 'Office') === 'Office' && hasCheckedOutToday && !todayLog?.isCheckedIn
+  );
+  const isReCheckInAllowed = Boolean(todayMeta?.reCheckInAllowed);
+
   const staffTasks = deliverables.filter(d => d.empId === user.id);
   const staffLogs = attendanceLogs
     .filter(a => a.empId === user.id)
@@ -31,11 +53,11 @@ export const InspectModal: React.FC<InspectModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="bg-white/95 backdrop-blur-2xl border border-white/80 max-w-xl w-full rounded-3xl p-6 sm:p-7 flex flex-col shadow-2xl relative max-h-[85vh] overflow-hidden"
+        className="bg-white/95 backdrop-blur-2xl border border-white/80 max-w-2xl w-full rounded-3xl p-6 sm:p-7 flex flex-col shadow-2xl relative max-h-[88vh] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="flex items-start justify-between pb-4 mb-4 border-b border-slate-100">
+        <div className="flex items-start justify-between gap-3 pb-4 mb-4 border-b border-slate-100">
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight">
@@ -53,10 +75,33 @@ export const InspectModal: React.FC<InspectModalProps> = ({
                   From {todayLoc}
                 </span>
               )}
+              {isTodaySystemLogout && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-50 text-rose-700 border border-rose-300">
+                  <i className="fa-solid fa-power-off text-[9px]"></i> System Logout
+                </span>
+              )}
+              {todayLog?.isCheckedIn && isReCheckInAllowed && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <i className="fa-solid fa-unlock-keyhole text-[9px]"></i> Boss Resumed Check-In
+                </span>
+              )}
             </div>
-            <p className="text-xs font-medium text-slate-500 mt-0.5">
-              {user.role} • ID: {user.id}
-            </p>
+            <div className="flex items-center gap-2.5 flex-wrap mt-1">
+              <p className="text-xs font-medium text-slate-500">
+                {user.role} • ID: {user.id}
+              </p>
+              {canGrantReCheckIn && onToggleReCheckInPermission && (
+                <button
+                  type="button"
+                  onClick={() => onToggleReCheckInPermission(user.id, true)}
+                  title="Immediately restore employee to Checked In status with accumulated daily shift time"
+                  className="px-3 py-1 rounded-full text-[10px] font-bold border transition-all cursor-pointer flex items-center gap-1 bg-amber-50 text-amber-800 border-amber-300 hover:bg-emerald-600 hover:text-white hover:border-transparent"
+                >
+                  <i className="fa-solid fa-unlock-keyhole text-[9px]"></i>
+                  <span>Boss Permission: Resume Check-In</span>
+                </button>
+              )}
+            </div>
           </div>
           {/* Round White Close Button */}
           <button
@@ -130,21 +175,46 @@ export const InspectModal: React.FC<InspectModalProps> = ({
                 ) : (
                   staffLogs.map((log) => {
                     const logLoc = getWorkLocationForDate(workLocations, user.id, log.date);
+                    const rowMeta = getDayAttendanceMeta(attendanceMeta, user.id, log.date);
+                    const isSysLogout = Boolean(rowMeta?.systemLogout && !log.isCheckedIn);
+
                     let timeTxt = null;
                     if (log.isCheckedIn) {
                       timeTxt = <span className="text-amber-600 font-bold">In Progress</span>;
                     } else if (log.totalMinutes > 0) {
-                      timeTxt = `${log.totalMinutes} mins`;
+                      const hrs = Math.floor(log.totalMinutes / 60);
+                      const mins = log.totalMinutes % 60;
+                      timeTxt = hrs > 0 ? `${log.totalMinutes}m (${hrs}h ${mins}m)` : `${log.totalMinutes} mins`;
                     } else {
                       timeTxt = '—';
                     }
 
                     return (
-                      <tr key={log.id}>
-                        <td className="py-2 px-3 font-semibold text-slate-700">
-                          {log.dateFormatted || log.date}
+                      <tr key={log.id} className="align-top">
+                        <td className="py-2.5 px-3">
+                          <div className="font-semibold text-slate-700">
+                            {log.dateFormatted || log.date}
+                          </div>
+                          {rowMeta?.sessions && rowMeta.sessions.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {rowMeta.sessions.map((sess, idx) => (
+                                <span
+                                  key={sess.id}
+                                  className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-mono font-semibold border ${
+                                    sess.isSystemLogout
+                                      ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                      : !sess.checkOutTime
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                      : 'bg-slate-50 text-slate-600 border-slate-200'
+                                  }`}
+                                >
+                                  {formatSessionLabel(sess, idx)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </td>
-                        <td className="py-2 px-3 text-center">
+                        <td className="py-2.5 px-3 text-center">
                           {logLoc === 'Office' ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-800">
                               <i className="fa-solid fa-building text-rose-500 text-[9px]"></i> Office
@@ -157,13 +227,20 @@ export const InspectModal: React.FC<InspectModalProps> = ({
                             <span className="text-slate-400">—</span>
                           )}
                         </td>
-                        <td className="py-2 px-3 text-center font-mono text-slate-600">
-                          {log.checkInTime || '—'}
+                        <td className="py-2.5 px-3 text-center font-mono text-slate-600">
+                          {rowMeta?.sessions && rowMeta.sessions.length > 0
+                            ? rowMeta.sessions[0].checkInTime
+                            : (log.checkInTime || '—')}
                         </td>
-                        <td className="py-2 px-3 text-center font-mono text-slate-600">
-                          {log.checkOutTime || '—'}
+                        <td className="py-2.5 px-3 text-center">
+                          <div className="font-mono text-slate-600">{log.checkOutTime || '—'}</div>
+                          {isSysLogout && (
+                            <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-rose-50 text-rose-600 border border-rose-200">
+                              System Logout
+                            </span>
+                          )}
                         </td>
-                        <td className="py-2 px-3 text-right font-mono text-slate-700">{timeTxt}</td>
+                        <td className="py-2.5 px-3 text-right font-mono text-slate-700 whitespace-nowrap">{timeTxt}</td>
                       </tr>
                     );
                   })

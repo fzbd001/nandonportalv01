@@ -10,12 +10,24 @@ import { ProfileEditModal } from './components/modals/ProfileEditModal.tsx';
 import { RegisterUserModal } from './components/modals/RegisterUserModal.tsx';
 import { PermanentLogoModal } from './components/modals/PermanentLogoModal.tsx';
 import { DownloadReportModal } from './components/modals/DownloadReportModal.tsx';
-import { AttendanceLog, Deliverable, ExportTimeframe, NotificationItem, User, WorkLocation, WorkLocationStore } from './types.ts';
+import {
+  AttendanceLog,
+  AttendanceMetaStore,
+  DayAttendanceMeta,
+  Deliverable,
+  ExportTimeframe,
+  NotificationItem,
+  User,
+  WorkLocation,
+  WorkLocationStore,
+  WorkSession
+} from './types.ts';
 import {
   checkSupabaseStatus,
   deleteDeliverableFromSupabase,
   deleteUserFromSupabase,
   fetchAttendanceFromSupabase,
+  fetchAttendanceMetaFromSupabase,
   fetchDeliverablesFromSupabase,
   fetchStudioAnnouncementFromSupabase,
   fetchStudioLogoFromSupabase,
@@ -24,6 +36,7 @@ import {
   saveStudioAnnouncementInSupabase,
   saveStudioLogoInSupabase,
   SupabaseStatus,
+  updateDayAttendanceMetaInSupabase,
   upsertAttendanceInSupabase,
   upsertDeliverableInSupabase,
   upsertEmployeeWorkLocationInSupabase,
@@ -31,14 +44,18 @@ import {
 } from './utils/supabase.ts';
 import {
   DEFAULT_ANNOUNCEMENT,
+  EMPTY_ATTENDANCE_META,
   EMPTY_WORK_LOCATIONS,
   formatDateEnglish,
   formatTime12h,
   generateInitialAttendance,
   generateInitialDeliverables,
+  getAttendanceMetaKey,
+  getDayAttendanceMeta,
   getTodayDateString,
   getWorkLocationForDate,
   INITIAL_USERS,
+  OFFICE_MAX_SHIFT_MINUTES,
   STORAGE_KEYS
 } from './utils/storage.ts';
 import { playChime } from './utils/audio.ts';
@@ -139,6 +156,23 @@ export default function App() {
     return EMPTY_WORK_LOCATIONS;
   });
 
+  const [attendanceMeta, setAttendanceMeta] = useState<AttendanceMetaStore>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.ATTENDANCE_META);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed === 'object' && parsed.byKey && typeof parsed.byKey === 'object') {
+          return { byKey: parsed.byKey };
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return EMPTY_ATTENDANCE_META;
+  });
+
+  const [systemLogoutNotice, setSystemLogoutNotice] = useState<string | null>(null);
+
   // Modals state
   const [inspectingUser, setInspectingUser] = useState<User | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -157,13 +191,14 @@ export default function App() {
       const status = await checkSupabaseStatus();
       setSupabaseStatus(status);
       if (status.tablesReady) {
-        const [dbUsers, dbLogs, dbDeliv, dbLogo, dbAnnouncement, dbWorkLocations] = await Promise.all([
+        const [dbUsers, dbLogs, dbDeliv, dbLogo, dbAnnouncement, dbWorkLocations, dbAttendanceMeta] = await Promise.all([
           fetchUsersFromSupabase(),
           fetchAttendanceFromSupabase(),
           fetchDeliverablesFromSupabase(),
           fetchStudioLogoFromSupabase(),
           fetchStudioAnnouncementFromSupabase(),
-          fetchWorkLocationsFromSupabase()
+          fetchWorkLocationsFromSupabase(),
+          fetchAttendanceMetaFromSupabase()
         ]);
         if (dbUsers && dbUsers.length > 0) setUsers(dbUsers);
         if (dbLogs && dbLogs.length > 0) setAttendanceLogs(dbLogs);
@@ -177,6 +212,10 @@ export default function App() {
           setWorkLocations(dbWorkLocations);
           localStorage.setItem(STORAGE_KEYS.WORK_LOCATIONS, JSON.stringify(dbWorkLocations));
         }
+        if (dbAttendanceMeta) {
+          setAttendanceMeta(dbAttendanceMeta);
+          localStorage.setItem(STORAGE_KEYS.ATTENDANCE_META, JSON.stringify(dbAttendanceMeta));
+        }
       }
     } catch {
       // offline fallback
@@ -187,10 +226,11 @@ export default function App() {
     refreshSupabaseStatus();
 
     const syncLiveUpdates = async () => {
-      const [latestAnnouncement, latestLocations, latestLogs] = await Promise.all([
+      const [latestAnnouncement, latestLocations, latestLogs, latestMeta] = await Promise.all([
         fetchStudioAnnouncementFromSupabase(),
         fetchWorkLocationsFromSupabase(),
-        fetchAttendanceFromSupabase()
+        fetchAttendanceFromSupabase(),
+        fetchAttendanceMetaFromSupabase()
       ]);
       if (latestAnnouncement) {
         setAnnouncement(latestAnnouncement);
@@ -203,9 +243,13 @@ export default function App() {
       if (latestLogs && latestLogs.length > 0) {
         setAttendanceLogs(latestLogs);
       }
+      if (latestMeta) {
+        setAttendanceMeta(latestMeta);
+        localStorage.setItem(STORAGE_KEYS.ATTENDANCE_META, JSON.stringify(latestMeta));
+      }
     };
 
-    const interval = setInterval(syncLiveUpdates, 30000);
+    const interval = setInterval(syncLiveUpdates, 10000);
     window.addEventListener('focus', syncLiveUpdates);
     return () => {
       clearInterval(interval);
@@ -246,6 +290,139 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.WORK_LOCATIONS, JSON.stringify(workLocations));
   }, [workLocations]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.ATTENDANCE_META, JSON.stringify(attendanceMeta));
+  }, [attendanceMeta]);
+
+  // 9-Hour Office Auto Check-Out & Auto System Logout Watcher
+  useEffect(() => {
+    const enforceOfficeNineHourRule = () => {
+      const today = getTodayDateString();
+      const nowMs = Date.now();
+
+      const overdueEntries = attendanceLogs
+        .map((log) => {
+          if (log.date !== today || !log.isCheckedIn || !log.checkInTimestamp) return null;
+          const staffUser = users.find((u) => u.id === log.empId);
+          if (staffUser?.isBoss) return null;
+
+          const dayMeta = getDayAttendanceMeta(attendanceMeta, log.empId, today);
+          const openSession = dayMeta?.sessions?.find((s) => !s.checkOutTime);
+          const effectiveLoc =
+            openSession?.location || getWorkLocationForDate(workLocations, log.empId, today) || 'Office';
+          if (effectiveLoc !== 'Office') return null;
+
+          const priorMins = log.totalMinutes || 0;
+          const alreadyHitSystemLogout =
+            Boolean(dayMeta?.systemLogout) || priorMins >= OFFICE_MAX_SHIFT_MINUTES;
+          const allowedSessionMinutes = alreadyHitSystemLogout
+            ? OFFICE_MAX_SHIFT_MINUTES
+            : Math.max(1, OFFICE_MAX_SHIFT_MINUTES - priorMins);
+          const allowedSessionMs = allowedSessionMinutes * 60 * 1000;
+
+          if (nowMs - log.checkInTimestamp < allowedSessionMs) return null;
+          return { log, allowedSessionMinutes, allowedSessionMs };
+        })
+        .filter((entry): entry is { log: AttendanceLog; allowedSessionMinutes: number; allowedSessionMs: number } => Boolean(entry));
+
+      if (overdueEntries.length === 0) return;
+
+      const updatedLogMap = new Map<string, AttendanceLog>();
+      const nextMetaByKey: Record<string, DayAttendanceMeta> = { ...attendanceMeta.byKey };
+      let shouldLogoutCurrentUser = false;
+
+      overdueEntries.forEach(({ log, allowedSessionMinutes, allowedSessionMs }) => {
+        const autoOutMs = log.checkInTimestamp + allowedSessionMs;
+        const autoOutTimeStr = formatTime12h(new Date(autoOutMs));
+        const key = getAttendanceMetaKey(log.empId, today);
+        const existingMeta = nextMetaByKey[key] || { sessions: [] };
+
+        let updatedSessions: WorkSession[];
+        const openIdx = existingMeta.sessions.findIndex((s) => !s.checkOutTime);
+        if (openIdx >= 0) {
+          updatedSessions = existingMeta.sessions.map((s, idx) =>
+            idx === openIdx
+              ? {
+                  ...s,
+                  checkOutTime: autoOutTimeStr,
+                  minutes: allowedSessionMinutes,
+                  isSystemLogout: true
+                }
+              : s
+          );
+        } else {
+          updatedSessions = [
+            ...existingMeta.sessions,
+            {
+              id: `sess-sys-${autoOutMs}`,
+              checkInTime: log.checkInTime || formatTime12h(new Date(log.checkInTimestamp)),
+              checkInTimestamp: log.checkInTimestamp,
+              checkOutTime: autoOutTimeStr,
+              minutes: allowedSessionMinutes,
+              location: 'Office',
+              isSystemLogout: true
+            }
+          ];
+        }
+
+        const totalMinutes = updatedSessions.reduce((sum, s) => sum + (s.minutes || 0), 0);
+
+        const nextDayMeta: DayAttendanceMeta = {
+          ...existingMeta,
+          sessions: updatedSessions,
+          systemLogout: true,
+          systemLogoutTime: autoOutTimeStr,
+          reCheckInAllowed: false
+        };
+        nextMetaByKey[key] = nextDayMeta;
+
+        const updatedLog: AttendanceLog = {
+          ...log,
+          isCheckedIn: false,
+          checkOutTime: autoOutTimeStr,
+          totalMinutes
+        };
+        updatedLogMap.set(log.id, updatedLog);
+
+        upsertAttendanceInSupabase(updatedLog);
+        updateDayAttendanceMetaInSupabase(
+          log.empId,
+          today,
+          () => nextDayMeta,
+          { byKey: nextMetaByKey }
+        ).catch(() => {
+          // offline fallback
+        });
+
+        fetch('/api/attendance/check-out', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ empId: log.empId })
+        }).catch(() => {
+          // offline fallback
+        });
+
+        if (currentUser && !currentUser.isBoss && currentUser.id === log.empId) {
+          shouldLogoutCurrentUser = true;
+        }
+      });
+
+      setAttendanceLogs((prev) => prev.map((l) => updatedLogMap.get(l.id) || l));
+      setAttendanceMeta({ byKey: nextMetaByKey });
+
+      if (shouldLogoutCurrentUser) {
+        setSystemLogoutNotice(
+          'System Logout: Your 9-hour Office shift limit was reached, so the system automatically checked you out and logged you out. Boss permission is required to check in again today.'
+        );
+        setCurrentUser(null);
+      }
+    };
+
+    enforceOfficeNineHourRule();
+    const timer = setInterval(enforceOfficeNineHourRule, 5000);
+    return () => clearInterval(timer);
+  }, [attendanceLogs, attendanceMeta, workLocations, users, currentUser]);
 
   // Sync browser tab favicon with saved studio logo or default NANDAN icon
   useEffect(() => {
@@ -291,46 +468,269 @@ export default function App() {
     }
   }
 
+  // Boss handler: grant permission & immediately resume Office employee into Checked-In state
+  // (Employee does NOT need to click Check-In again; total daily time keeps accumulating until final Check-Out)
+  const handleToggleReCheckInPermission = (empId: string, allow: boolean) => {
+    const today = getTodayDateString();
+    const key = getAttendanceMetaKey(empId, today);
+    const now = new Date();
+    const nowTs = now.getTime();
+    const timeStr = formatTime12h(now);
+
+    const existingLog = attendanceLogs.find((a) => a.empId === empId && a.date === today);
+    const staffUser = users.find((u) => u.id === empId);
+    const existingMeta = attendanceMeta.byKey[key] || { sessions: [] };
+
+    if (!allow) {
+      const updatedDay: DayAttendanceMeta = {
+        ...existingMeta,
+        reCheckInAllowed: false,
+        reCheckInGrantedAt: undefined
+      };
+      const nextStore: AttendanceMetaStore = {
+        byKey: {
+          ...attendanceMeta.byKey,
+          [key]: updatedDay
+        }
+      };
+      setAttendanceMeta(nextStore);
+      updateDayAttendanceMetaInSupabase(
+        empId,
+        today,
+        (cur) => ({
+          ...cur,
+          reCheckInAllowed: false,
+          reCheckInGrantedAt: undefined
+        }),
+        nextStore
+      )
+        .then((merged) => setAttendanceMeta(merged))
+        .catch(() => {
+          // offline fallback
+        });
+      return;
+    }
+
+    // If employee is already checked in, just ensure permission marker is set
+    if (existingLog?.isCheckedIn) {
+      return;
+    }
+
+    const todayLoc: WorkLocation = getWorkLocationForDate(workLocations, empId, today) || 'Office';
+
+    // Preserve all completed sessions from earlier today so daily total time adds up cleanly
+    let existingSessions: WorkSession[] = existingMeta.sessions ? [...existingMeta.sessions] : [];
+    if (existingSessions.length === 0 && existingLog && existingLog.checkInTime && existingLog.checkOutTime) {
+      existingSessions = [
+        {
+          id: `sess-legacy-${existingLog.id}`,
+          checkInTime: existingLog.checkInTime,
+          checkInTimestamp: existingLog.checkInTimestamp || nowTs,
+          checkOutTime: existingLog.checkOutTime,
+          minutes: existingLog.totalMinutes || 0,
+          location: todayLoc,
+          isSystemLogout: Boolean(existingMeta.systemLogout)
+        }
+      ];
+    }
+
+    const priorCompletedMins =
+      existingSessions.length > 0
+        ? existingSessions.reduce((sum, s) => sum + (s.checkOutTime ? (s.minutes || 0) : 0), 0)
+        : (existingLog ? (existingLog.totalMinutes || 0) : 0);
+
+    const resumedSession: WorkSession = {
+      id: `sess-${nowTs}`,
+      checkInTime: timeStr,
+      checkInTimestamp: nowTs,
+      checkOutTime: null,
+      minutes: 0,
+      location: todayLoc
+    };
+
+    const nextDayMeta: DayAttendanceMeta = {
+      ...existingMeta,
+      sessions: [...existingSessions, resumedSession],
+      reCheckInAllowed: true,
+      reCheckInGrantedAt: timeStr
+    };
+
+    const nextMetaStore: AttendanceMetaStore = {
+      byKey: {
+        ...attendanceMeta.byKey,
+        [key]: nextDayMeta
+      }
+    };
+    setAttendanceMeta(nextMetaStore);
+
+    let resumedLog: AttendanceLog;
+    if (!existingLog) {
+      resumedLog = {
+        id: `att-${nowTs}`,
+        empId,
+        staffName: staffUser ? staffUser.name : empId,
+        date: today,
+        dateFormatted: formatDateEnglish(now),
+        checkInTime: timeStr,
+        checkInTimestamp: nowTs,
+        checkOutTime: null,
+        isCheckedIn: true,
+        totalMinutes: priorCompletedMins
+      };
+      setAttendanceLogs((prev) => [resumedLog, ...prev]);
+    } else {
+      resumedLog = {
+        ...existingLog,
+        isCheckedIn: true,
+        checkInTime: timeStr,
+        checkInTimestamp: nowTs,
+        checkOutTime: null,
+        dateFormatted: formatDateEnglish(now),
+        totalMinutes: priorCompletedMins
+      };
+      setAttendanceLogs((prev) =>
+        prev.map((a) => (a.empId === empId && a.date === today ? resumedLog : a))
+      );
+    }
+
+    playChime();
+    upsertAttendanceInSupabase(resumedLog);
+    updateDayAttendanceMetaInSupabase(
+      empId,
+      today,
+      () => nextDayMeta,
+      nextMetaStore
+    )
+      .then((merged) => setAttendanceMeta(merged))
+      .catch(() => {
+        // offline fallback
+      });
+
+    fetch('/api/attendance/check-in', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ empId })
+    }).catch(() => {
+      // offline fallback
+    });
+  };
+
   // Attendance handlers
   const handleCheckIn = async () => {
     if (!currentUser) return;
     const today = getTodayDateString();
+    const existing = attendanceLogs.find((a) => a.empId === currentUser.id && a.date === today);
+    if (existing?.isCheckedIn) return;
+
+    const todayLoc: WorkLocation =
+      getWorkLocationForDate(workLocations, currentUser.id, today) || 'Office';
+    const dayMeta = getDayAttendanceMeta(attendanceMeta, currentUser.id, today);
+
+    const hasCheckedOutBeforeToday = Boolean(
+      existing &&
+      !existing.isCheckedIn &&
+      (existing.checkOutTime ||
+        existing.totalMinutes > 0 ||
+        (dayMeta?.sessions?.length ?? 0) > 0 ||
+        dayMeta?.systemLogout)
+    );
+
+    // Office rule: employees cannot self re-check-in after checking out;
+    // Boss clicking "Resume Check-In" directly restores them to Checked-In status.
+    if (!currentUser.isBoss && todayLoc === 'Office' && hasCheckedOutBeforeToday) {
+      return;
+    }
+
     const now = new Date();
+    const nowTs = now.getTime();
     const timeStr = formatTime12h(now);
+    const metaKey = getAttendanceMetaKey(currentUser.id, today);
+
+    // Preserve prior completed sessions today (for Home multiple check-in or Boss-approved Office re-check-in)
+    let existingSessions: WorkSession[] = dayMeta?.sessions ? [...dayMeta.sessions] : [];
+    if (existingSessions.length === 0 && existing && existing.checkInTime && existing.checkOutTime) {
+      existingSessions = [
+        {
+          id: `sess-legacy-${existing.id}`,
+          checkInTime: existing.checkInTime,
+          checkInTimestamp: existing.checkInTimestamp || nowTs,
+          checkOutTime: existing.checkOutTime,
+          minutes: existing.totalMinutes || 0,
+          location: todayLoc,
+          isSystemLogout: Boolean(dayMeta?.systemLogout)
+        }
+      ];
+    }
+
+    const priorCompletedMins =
+      existingSessions.length > 0
+        ? existingSessions.reduce((sum, s) => sum + (s.checkOutTime ? (s.minutes || 0) : 0), 0)
+        : (existing && !existing.isCheckedIn ? (existing.totalMinutes || 0) : 0);
+
+    const newSession: WorkSession = {
+      id: `sess-${nowTs}`,
+      checkInTime: timeStr,
+      checkInTimestamp: nowTs,
+      checkOutTime: null,
+      minutes: 0,
+      location: todayLoc
+    };
+
+    const nextDayMeta: DayAttendanceMeta = {
+      ...(dayMeta || { sessions: [] }),
+      sessions: [...existingSessions, newSession],
+      reCheckInAllowed: false // consume one-time Boss permission upon check-in
+    };
+
+    const nextMetaStore: AttendanceMetaStore = {
+      byKey: {
+        ...attendanceMeta.byKey,
+        [metaKey]: nextDayMeta
+      }
+    };
+    setAttendanceMeta(nextMetaStore);
 
     let targetLog: AttendanceLog;
+    if (!existing) {
+      targetLog = {
+        id: `att-${nowTs}`,
+        empId: currentUser.id,
+        staffName: currentUser.name,
+        date: today,
+        dateFormatted: formatDateEnglish(now),
+        checkInTime: timeStr,
+        checkInTimestamp: nowTs,
+        checkOutTime: null,
+        isCheckedIn: true,
+        totalMinutes: 0
+      };
+      setAttendanceLogs((prev) => [targetLog, ...prev]);
+    } else {
+      targetLog = {
+        ...existing,
+        isCheckedIn: true,
+        checkInTime: timeStr,
+        checkInTimestamp: nowTs,
+        checkOutTime: null,
+        dateFormatted: formatDateEnglish(now),
+        totalMinutes: priorCompletedMins
+      };
+      setAttendanceLogs((prev) =>
+        prev.map((a) => (a.empId === currentUser.id && a.date === today ? targetLog : a))
+      );
+    }
 
-    setAttendanceLogs((prev) => {
-      const existing = prev.find((a) => a.empId === currentUser.id && a.date === today);
-      if (!existing) {
-        targetLog = {
-          id: `att-${Date.now()}`,
-          empId: currentUser.id,
-          staffName: currentUser.name,
-          date: today,
-          dateFormatted: formatDateEnglish(now),
-          checkInTime: timeStr,
-          checkInTimestamp: now.getTime(),
-          checkOutTime: null,
-          isCheckedIn: true,
-          totalMinutes: 0
-        };
-        upsertAttendanceInSupabase(targetLog);
-        return [targetLog, ...prev];
-      } else {
-        targetLog = {
-          ...existing,
-          isCheckedIn: true,
-          checkInTime: timeStr,
-          checkInTimestamp: now.getTime(),
-          checkOutTime: null,
-          dateFormatted: formatDateEnglish(now),
-          totalMinutes: 0
-        };
-        upsertAttendanceInSupabase(targetLog);
-        return prev.map((a) => (a.empId === currentUser.id && a.date === today ? targetLog : a));
-      }
-    });
+    upsertAttendanceInSupabase(targetLog);
+    updateDayAttendanceMetaInSupabase(
+      currentUser.id,
+      today,
+      () => nextDayMeta,
+      nextMetaStore
+    )
+      .then((merged) => setAttendanceMeta(merged))
+      .catch(() => {
+        // offline fallback
+      });
 
     playChime();
 
@@ -349,27 +749,85 @@ export default function App() {
   const handleCheckOut = async () => {
     if (!currentUser) return;
     const today = getTodayDateString();
+    const activeLog = attendanceLogs.find(
+      (log) => log.empId === currentUser.id && log.date === today && log.isCheckedIn
+    );
+    if (!activeLog) return;
+
     const now = new Date();
+    const nowTs = now.getTime();
     const timeStr = formatTime12h(now);
+    const startMs = activeLog.checkInTimestamp || nowTs;
+    const sessionMins = Math.max(1, Math.round(Math.max(0, nowTs - startMs) / 60000));
+
+    const todayLoc: WorkLocation =
+      getWorkLocationForDate(workLocations, currentUser.id, today) || 'Office';
+    const metaKey = getAttendanceMetaKey(currentUser.id, today);
+    const existingMeta = attendanceMeta.byKey[metaKey] || { sessions: [] };
+
+    let updatedSessions: WorkSession[];
+    const openIdx = existingMeta.sessions.findIndex((s) => !s.checkOutTime);
+    if (openIdx >= 0) {
+      updatedSessions = existingMeta.sessions.map((s, idx) =>
+        idx === openIdx
+          ? {
+              ...s,
+              checkOutTime: timeStr,
+              minutes: sessionMins
+            }
+          : s
+      );
+    } else {
+      updatedSessions = [
+        ...existingMeta.sessions,
+        {
+          id: `sess-${nowTs}`,
+          checkInTime: activeLog.checkInTime || timeStr,
+          checkInTimestamp: startMs,
+          checkOutTime: timeStr,
+          minutes: sessionMins,
+          location: todayLoc
+        }
+      ];
+    }
+
+    const accumulatedTotalMinutes = updatedSessions.reduce((sum, s) => sum + (s.minutes || 0), 0);
+
+    const nextDayMeta: DayAttendanceMeta = {
+      ...existingMeta,
+      sessions: updatedSessions,
+      reCheckInAllowed: false
+    };
+    const nextMetaStore: AttendanceMetaStore = {
+      byKey: {
+        ...attendanceMeta.byKey,
+        [metaKey]: nextDayMeta
+      }
+    };
+    setAttendanceMeta(nextMetaStore);
+
+    const updatedLog: AttendanceLog = {
+      ...activeLog,
+      isCheckedIn: false,
+      checkOutTime: timeStr,
+      totalMinutes: accumulatedTotalMinutes
+    };
 
     setAttendanceLogs((prev) =>
-      prev.map((log) => {
-        if (log.empId === currentUser.id && log.date === today && log.isCheckedIn) {
-          const startMs = log.checkInTimestamp || now.getTime();
-          const diffMs = Math.max(0, now.getTime() - startMs);
-          const elapsedMins = Math.max(1, Math.round(diffMs / 60000));
-          const updatedLog: AttendanceLog = {
-            ...log,
-            isCheckedIn: false,
-            checkOutTime: timeStr,
-            totalMinutes: elapsedMins
-          };
-          upsertAttendanceInSupabase(updatedLog);
-          return updatedLog;
-        }
-        return log;
-      })
+      prev.map((log) => (log.id === activeLog.id ? updatedLog : log))
     );
+
+    upsertAttendanceInSupabase(updatedLog);
+    updateDayAttendanceMetaInSupabase(
+      currentUser.id,
+      today,
+      () => nextDayMeta,
+      nextMetaStore
+    )
+      .then((merged) => setAttendanceMeta(merged))
+      .catch(() => {
+        // offline fallback
+      });
 
     playChime();
 
@@ -385,9 +843,18 @@ export default function App() {
     }
   };
 
-  // Deliverables handlers
+  // Helper to check if employee deliverables are locked (checked out / not checked in)
+  const isCurrentEmployeeCheckedIn = (): boolean => {
+    if (!currentUser) return false;
+    if (currentUser.isBoss) return true;
+    const today = getTodayDateString();
+    const myTodayLog = attendanceLogs.find((a) => a.empId === currentUser.id && a.date === today);
+    return Boolean(myTodayLog?.isCheckedIn);
+  };
+
+  // Deliverables handlers (locked for employees who are checked out / not checked in)
   const handleSubmitDeliverable = async (category: string, title: string, notes: string, progress: number) => {
-    if (!currentUser) return;
+    if (!currentUser || !isCurrentEmployeeCheckedIn()) return;
     const newTask: Deliverable = {
       id: `del-${Date.now()}`,
       empId: currentUser.id,
@@ -416,6 +883,7 @@ export default function App() {
   };
 
   const handleAdjustProgress = async (taskId: string, delta: number) => {
+    if (!isCurrentEmployeeCheckedIn()) return;
     let nextProg = 0;
     let targetTask: Deliverable | undefined;
     setDeliverables((prev) =>
@@ -445,6 +913,7 @@ export default function App() {
   };
 
   const handleToggleCompleted = async (taskId: string) => {
+    if (!isCurrentEmployeeCheckedIn()) return;
     let completedVal = false;
     let targetTask: Deliverable | undefined;
     setDeliverables((prev) =>
@@ -479,6 +948,7 @@ export default function App() {
   };
 
   const handleDeleteDeliverable = async (taskId: string) => {
+    if (!isCurrentEmployeeCheckedIn()) return;
     setDeliverables((prev) => prev.filter((t) => t.id !== taskId));
     deleteDeliverableFromSupabase(taskId);
 
@@ -564,6 +1034,7 @@ export default function App() {
         .catch(() => {
           // offline fallback
         });
+      setSystemLogoutNotice(null);
       setCurrentUser(user);
       playChime();
       return true;
@@ -717,13 +1188,13 @@ export default function App() {
 
   // Export handlers
   const handleExportCSV = (timeframe: ExportTimeframe, filterMember: string) => {
-    executeExportCSV(users, attendanceLogs, deliverables, filterMember, timeframe, workLocations);
+    executeExportCSV(users, attendanceLogs, deliverables, filterMember, timeframe, workLocations, attendanceMeta);
     playChime();
     setIsDownloadModalOpen(false);
   };
 
   const handleDownloadPDF = (timeframe: ExportTimeframe, filterMember: string) => {
-    generateAndPrintPDFReport(users, attendanceLogs, deliverables, filterMember, timeframe, savedLogo, workLocations);
+    generateAndPrintPDFReport(users, attendanceLogs, deliverables, filterMember, timeframe, savedLogo, workLocations, attendanceMeta);
     playChime();
     setIsDownloadModalOpen(false);
   };
@@ -735,6 +1206,9 @@ export default function App() {
     : undefined;
   const currentUserTodayWorkLocation = currentUser
     ? getWorkLocationForDate(workLocations, currentUser.id, todayStr)
+    : null;
+  const currentUserTodayMeta = currentUser
+    ? getDayAttendanceMeta(attendanceMeta, currentUser.id, todayStr)
     : null;
 
   const currentUser5DayLogs = currentUser
@@ -783,6 +1257,9 @@ export default function App() {
                 currentUser={currentUser}
                 todayLog={currentUserTodayLog}
                 todayWorkLocation={currentUserTodayWorkLocation}
+                todayMeta={currentUserTodayMeta}
+                attendanceMeta={attendanceMeta}
+                workLocations={workLocations}
                 staff5DayLogs={currentUser5DayLogs}
                 deliverables={deliverables}
                 onCheckIn={handleCheckIn}
@@ -798,6 +1275,8 @@ export default function App() {
                 attendanceLogs={attendanceLogs}
                 deliverables={deliverables}
                 workLocations={workLocations}
+                attendanceMeta={attendanceMeta}
+                onToggleReCheckInPermission={handleToggleReCheckInPermission}
                 onOpenDownloadModal={() => setIsDownloadModalOpen(true)}
                 onOpenAssignModal={() => setIsAssignModalOpen(true)}
                 onOpenTeamIdsModal={() => setIsRegisterModalOpen(true)}
@@ -809,6 +1288,8 @@ export default function App() {
       ) : (
         <LoginModal
           savedLogo={savedLogo}
+          systemLogoutNotice={systemLogoutNotice}
+          onDismissNotice={() => setSystemLogoutNotice(null)}
           onOpenLogoModal={() => setIsLogoModalOpen(true)}
           onLogin={handleLogin}
         />
@@ -864,6 +1345,8 @@ export default function App() {
           deliverables={deliverables}
           attendanceLogs={attendanceLogs}
           workLocations={workLocations}
+          attendanceMeta={attendanceMeta}
+          onToggleReCheckInPermission={handleToggleReCheckInPermission}
           onClose={() => setInspectingUser(null)}
         />
       )}

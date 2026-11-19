@@ -1,4 +1,13 @@
-import { AttendanceLog, Deliverable, User, WorkLocation, WorkLocationStore } from '../types.ts';
+import {
+  AttendanceLog,
+  AttendanceMetaStore,
+  DayAttendanceMeta,
+  Deliverable,
+  User,
+  WorkLocation,
+  WorkLocationStore,
+  WorkSession
+} from '../types.ts';
 
 export const INITIAL_USERS: User[] = [
   { id: "boss123", name: "Nil Utpal", role: "Creative Director & Boss", isBoss: true, password: "boss123" },
@@ -17,12 +26,57 @@ export const STORAGE_KEYS = {
   READ_NOTIFS: 'nandan_read_notifs_v6',
   ANNOUNCEMENT: 'nandan_studio_announcement_v6',
   WORK_LOCATIONS: 'nandan_work_locations_v6',
+  ATTENDANCE_META: 'nandan_attendance_meta_v6',
 };
+
+export const OFFICE_MAX_SHIFT_MINUTES = 9 * 60; // 9 hours (540 mins)
+export const OFFICE_MAX_SHIFT_MS = OFFICE_MAX_SHIFT_MINUTES * 60 * 1000;
 
 export const EMPTY_WORK_LOCATIONS: WorkLocationStore = {
   latestByEmp: {},
   byDate: {},
 };
+
+export const EMPTY_ATTENDANCE_META: AttendanceMetaStore = {
+  byKey: {},
+};
+
+export function getAttendanceMetaKey(empId: string, date: string): string {
+  return `${empId}__${date}`;
+}
+
+export function getDayAttendanceMeta(
+  store: AttendanceMetaStore | undefined,
+  empId: string,
+  date: string
+): DayAttendanceMeta | null {
+  if (!store || !store.byKey) return null;
+  return store.byKey[getAttendanceMetaKey(empId, date)] || null;
+}
+
+export function formatDurationShort(minutes: number): string {
+  if (!minutes || minutes <= 0) return '0m';
+  const hrs = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hrs > 0 && mins === 0) return `${hrs}h`;
+  if (hrs > 0) return `${hrs}h ${mins}m`;
+  return `${mins}m`;
+}
+
+export function formatSessionLabel(session: WorkSession, index: number): string {
+  const prefix = `S${index + 1}`;
+  if (!session.checkOutTime) {
+    return `${prefix}: ${session.checkInTime}–Active`;
+  }
+  const dur = formatDurationShort(session.minutes);
+  const suffix = session.isSystemLogout ? ' [System Logout]' : '';
+  return `${prefix}: ${session.checkInTime}–${session.checkOutTime} (${dur})${suffix}`;
+}
+
+export function formatSessionsSummary(sessions: WorkSession[] | undefined): string {
+  if (!sessions || sessions.length === 0) return '';
+  return sessions.map((s, idx) => formatSessionLabel(s, idx)).join(', ');
+}
 
 export function getWorkLocationForDate(
   store: WorkLocationStore | undefined,

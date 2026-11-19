@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { AttendanceLog, Deliverable, User, WorkLocationStore } from '../types.ts';
-import { getTodayDateString, getWorkLocationForDate } from '../utils/storage.ts';
+import { AttendanceLog, AttendanceMetaStore, Deliverable, User, WorkLocationStore } from '../types.ts';
+import { getDayAttendanceMeta, getTodayDateString, getWorkLocationForDate } from '../utils/storage.ts';
 import { WeeklyHeatmapChart } from './WeeklyHeatmapChart.tsx';
 
 interface BossRadarViewProps {
@@ -8,6 +8,8 @@ interface BossRadarViewProps {
   attendanceLogs: AttendanceLog[];
   deliverables: Deliverable[];
   workLocations: WorkLocationStore;
+  attendanceMeta: AttendanceMetaStore;
+  onToggleReCheckInPermission: (empId: string, allow: boolean) => void;
   onOpenDownloadModal: () => void;
   onOpenAssignModal: () => void;
   onOpenTeamIdsModal: () => void;
@@ -19,6 +21,8 @@ export const BossRadarView: React.FC<BossRadarViewProps> = ({
   attendanceLogs,
   deliverables,
   workLocations,
+  attendanceMeta,
+  onToggleReCheckInPermission,
   onOpenDownloadModal,
   onOpenAssignModal,
   onOpenTeamIdsModal,
@@ -184,16 +188,37 @@ export const BossRadarView: React.FC<BossRadarViewProps> = ({
                 filteredStaff.map((staff) => {
                   const log = attendanceLogs.find(a => a.empId === staff.id && a.date === today);
                   const isPresent = Boolean(log?.isCheckedIn);
-                  const checkIn = log?.checkInTime || '--:--';
-                  const checkOut = log?.checkOutTime || '--:--';
+                  const dayMeta = getDayAttendanceMeta(attendanceMeta, staff.id, today);
                   const todayLoc = getWorkLocationForDate(workLocations, staff.id, today);
                   const latestRecord = workLocations.latestByEmp?.[staff.id];
                   const loginTimeToday = latestRecord && latestRecord.date === today ? latestRecord.loginTime : null;
 
+                  const hasCheckedOutToday = Boolean(
+                    log &&
+                    !isPresent &&
+                    (log.checkOutTime ||
+                      log.totalMinutes > 0 ||
+                      (dayMeta?.sessions?.length ?? 0) > 0 ||
+                      dayMeta?.systemLogout)
+                  );
+                  const isSystemLogout = Boolean(dayMeta?.systemLogout && !isPresent);
+                  const needsBossUnlock = Boolean(
+                    (todayLoc || 'Office') === 'Office' && hasCheckedOutToday && !isPresent
+                  );
+                  const isReCheckInAllowed = Boolean(dayMeta?.reCheckInAllowed);
+                  const sessionCount = dayMeta?.sessions?.length || 0;
+
+                  const checkIn =
+                    dayMeta?.sessions && dayMeta.sessions.length > 0
+                      ? dayMeta.sessions[0].checkInTime
+                      : (log?.checkInTime || '--:--');
+                  const checkOut = log?.checkOutTime || '--:--';
+
                   let shiftTimeText = '--';
                   if (isPresent && log?.checkInTimestamp) {
+                    const priorMins = log.totalMinutes || 0;
                     const diffMs = Math.max(0, Date.now() - log.checkInTimestamp);
-                    const mins = Math.floor(diffMs / 60000);
+                    const mins = priorMins + Math.floor(diffMs / 60000);
                     const hrs = Math.floor(mins / 60);
                     const remM = mins % 60;
                     shiftTimeText = hrs > 0 ? `${hrs}h ${String(remM).padStart(2, '0')}m live` : `${remM}m live`;
@@ -230,10 +255,25 @@ export const BossRadarView: React.FC<BossRadarViewProps> = ({
                               <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span> Work from Home
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> In Office
-                            </span>
+                            <div className="flex flex-col items-center gap-0.5">
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> In Office
+                              </span>
+                              {isReCheckInAllowed && (
+                                <span className="text-[9px] font-bold text-emerald-700">
+                                  Boss Approved{dayMeta?.reCheckInGrantedAt ? ` • ${dayMeta.reCheckInGrantedAt}` : ''}
+                                </span>
+                              )}
+                            </div>
                           )
+                        ) : isSystemLogout ? (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-300">
+                            <i className="fa-solid fa-power-off text-[10px]"></i> System Logout
+                          </span>
+                        ) : hasCheckedOutToday ? (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                            <i className="fa-regular fa-circle-check text-[10px]"></i> Checked Out
+                          </span>
                         ) : (
                           <span className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-bold bg-rose-50 text-rose-600 border border-rose-200">
                             Absent
@@ -266,15 +306,25 @@ export const BossRadarView: React.FC<BossRadarViewProps> = ({
                       <td className="py-3.5 px-4 text-center font-mono font-bold text-xs text-slate-700">
                         {checkIn}
                       </td>
-                      <td className="py-3.5 px-4 text-center font-mono font-bold text-xs text-slate-700">
-                        {checkOut}
+                      <td className="py-3.5 px-4 text-center">
+                        <div className="font-mono font-bold text-xs text-slate-700">{checkOut}</div>
+                        {isSystemLogout && (
+                          <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-rose-50 text-rose-600 border border-rose-200">
+                            System Logout
+                          </span>
+                        )}
                       </td>
                       <td
                         className={`py-3.5 px-4 text-center font-mono font-bold text-xs ${
                           isPresent ? 'text-rose-600' : 'text-slate-700'
                         }`}
                       >
-                        {shiftTimeText}
+                        <div>{shiftTimeText}</div>
+                        {sessionCount > 1 && (
+                          <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[9px] font-sans font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            {sessionCount} sessions
+                          </span>
+                        )}
                       </td>
                       <td className="py-3.5 px-4">
                         <div className="flex flex-col gap-1 w-44">
@@ -299,12 +349,25 @@ export const BossRadarView: React.FC<BossRadarViewProps> = ({
                         </div>
                       </td>
                       <td className="py-3.5 px-4 text-right">
-                        <button
-                          onClick={() => onInspectUser(staff)}
-                          className="px-3.5 py-1.5 rounded-full text-xs font-bold text-rose-600 hover:text-white hover:bg-rose-600 border border-rose-200 hover:border-transparent transition-all shadow-xs cursor-pointer"
-                        >
-                          Inspect
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                          {needsBossUnlock && (
+                            <button
+                              type="button"
+                              onClick={() => onToggleReCheckInPermission(staff.id, true)}
+                              title="Grant Boss permission — immediately restores employee to Checked In status and continues adding today's shift time"
+                              className="px-3 py-1.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer flex items-center gap-1 bg-amber-50 text-amber-800 border-amber-300 hover:bg-emerald-600 hover:text-white hover:border-transparent"
+                            >
+                              <i className="fa-solid fa-unlock-keyhole text-[10px]"></i>
+                              <span>Resume Check-In</span>
+                            </button>
+                          )}
+                          <button
+                            onClick={() => onInspectUser(staff)}
+                            className="px-3.5 py-1.5 rounded-full text-xs font-bold text-rose-600 hover:text-white hover:bg-rose-600 border border-rose-200 hover:border-transparent transition-all shadow-xs cursor-pointer"
+                          >
+                            Inspect
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

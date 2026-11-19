@@ -1,5 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
-import { AttendanceLog, Deliverable, User, WorkLocation, WorkLocationStore } from '../types.ts';
+import {
+  AttendanceLog,
+  AttendanceMetaStore,
+  DayAttendanceMeta,
+  Deliverable,
+  User,
+  WorkLocation,
+  WorkLocationStore
+} from '../types.ts';
 
 export const SUPABASE_URL =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
@@ -334,5 +342,66 @@ export async function upsertEmployeeWorkLocationInSupabase(
     }
   };
   await saveWorkLocationsInSupabase(next);
+  return next;
+}
+
+/**
+ * Fetch attendance metadata (sessions, systemLogout flags, boss re-check-in permissions) from Supabase studio_settings
+ */
+export async function fetchAttendanceMetaFromSupabase(): Promise<AttendanceMetaStore | null> {
+  try {
+    const { data, error } = await supabase
+      .from('studio_settings')
+      .select('value')
+      .eq('key', 'attendance_meta_v1')
+      .maybeSingle();
+    if (error || !data || !data.value) return null;
+    const parsed = JSON.parse(data.value);
+    if (parsed && typeof parsed === 'object' && parsed.byKey && typeof parsed.byKey === 'object') {
+      return { byKey: parsed.byKey };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Save attendance metadata store to Supabase studio_settings
+ */
+export async function saveAttendanceMetaInSupabase(store: AttendanceMetaStore): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('studio_settings').upsert({
+      key: 'attendance_meta_v1',
+      value: JSON.stringify(store),
+      updated_at: new Date().toISOString()
+    });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Fetch-merge-upsert a single employee-day attendance metadata entry safely across devices
+ */
+export async function updateDayAttendanceMetaInSupabase(
+  empId: string,
+  date: string,
+  updater: (current: DayAttendanceMeta) => DayAttendanceMeta,
+  fallbackStore?: AttendanceMetaStore
+): Promise<AttendanceMetaStore> {
+  const key = `${empId}__${date}`;
+  const remote = await fetchAttendanceMetaFromSupabase();
+  const base: AttendanceMetaStore = remote || fallbackStore || { byKey: {} };
+  const existing: DayAttendanceMeta = base.byKey[key] || { sessions: [] };
+  const updatedDay = updater(existing);
+  const next: AttendanceMetaStore = {
+    byKey: {
+      ...base.byKey,
+      [key]: updatedDay
+    }
+  };
+  await saveAttendanceMetaInSupabase(next);
   return next;
 }

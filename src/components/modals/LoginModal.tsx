@@ -3,12 +3,16 @@ import { WorkLocation } from '../../types.ts';
 
 interface LoginModalProps {
   savedLogo: string | null;
+  systemLogoutNotice?: string | null;
+  onDismissNotice?: () => void;
   onOpenLogoModal: () => void;
   onLogin: (empId: string, password: string, workLocation: WorkLocation) => boolean;
 }
 
 export const LoginModal: React.FC<LoginModalProps> = ({
   savedLogo,
+  systemLogoutNotice,
+  onDismissNotice,
   onOpenLogoModal,
   onLogin
 }) => {
@@ -46,6 +50,23 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         <p className="text-xs text-slate-500 font-semibold mb-5">
           Broadcast &amp; Creative Media • Secure Portal Sign In
         </p>
+
+        {systemLogoutNotice && (
+          <div className="w-full mb-4 p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs font-semibold flex items-start gap-2.5 shadow-xs">
+            <i className="fa-solid fa-power-off text-rose-600 mt-0.5 flex-shrink-0"></i>
+            <div className="flex-1 leading-relaxed">{systemLogoutNotice}</div>
+            {onDismissNotice && (
+              <button
+                type="button"
+                onClick={onDismissNotice}
+                className="text-amber-700 hover:text-amber-950 cursor-pointer flex-shrink-0"
+                title="Dismiss"
+              >
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            )}
+          </div>
+        )}
 
         {errorMsg && (
           <div className="w-full mb-4 p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold text-center">
