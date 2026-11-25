@@ -617,7 +617,10 @@ export const StaffView: React.FC<StaffViewProps> = ({
               ) : (
                 staff5DayLogs.map((log) => {
                   const dayMeta = getDayAttendanceMeta(attendanceMeta, currentUser.id, log.date);
-                  const logLoc = getWorkLocationForDate(workLocations, currentUser.id, log.date);
+                  const logLoc =
+                    getWorkLocationForDate(workLocations, currentUser.id, log.date, false) ||
+                    dayMeta?.sessions?.[0]?.location ||
+                    (todayLog && log.date === todayLog.date ? (todayWorkLocation || null) : null);
                   const isSysLogout = Boolean(dayMeta?.systemLogout && !log.isCheckedIn);
 
                   let timeBadge = null;

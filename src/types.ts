@@ -79,6 +79,19 @@ export interface AttendanceMetaStore {
   byKey: Record<string, DayAttendanceMeta>; // key: `${empId}__${date}`
 }
 
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderRole: string;
+  isBoss: boolean;
+  text: string;
+  time: string;
+  date: string; // YYYY-MM-DD
+  dateLabel: string; // e.g. 24 Nov, 2026
+  createdAt: number;
+}
+
 export const CREATIVE_CATEGORIES = [
   'Video Editing',
   'Graphic Design',

@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { Header } from './components/Header.tsx';
 import { UpdateTicker } from './components/UpdateTicker.tsx';
 import { StaffView } from './components/StaffView.tsx';
@@ -10,9 +11,11 @@ import { ProfileEditModal } from './components/modals/ProfileEditModal.tsx';
 import { RegisterUserModal } from './components/modals/RegisterUserModal.tsx';
 import { PermanentLogoModal } from './components/modals/PermanentLogoModal.tsx';
 import { DownloadReportModal } from './components/modals/DownloadReportModal.tsx';
+import { StudioChatModal } from './components/modals/StudioChatModal.tsx';
 import {
   AttendanceLog,
   AttendanceMetaStore,
+  ChatMessage,
   DayAttendanceMeta,
   Deliverable,
   ExportTimeframe,
@@ -23,11 +26,13 @@ import {
   WorkSession
 } from './types.ts';
 import {
+  appendChatMessageInSupabase,
   checkSupabaseStatus,
   deleteDeliverableFromSupabase,
   deleteUserFromSupabase,
   fetchAttendanceFromSupabase,
   fetchAttendanceMetaFromSupabase,
+  fetchChatMessagesFromSupabase,
   fetchDeliverablesFromSupabase,
   fetchStudioAnnouncementFromSupabase,
   fetchStudioLogoFromSupabase,
@@ -35,6 +40,9 @@ import {
   fetchWorkLocationsFromSupabase,
   saveStudioAnnouncementInSupabase,
   saveStudioLogoInSupabase,
+  StudioChatPresenceUser,
+  subscribeToStudioChatChannel,
+  supabase,
   SupabaseStatus,
   updateDayAttendanceMetaInSupabase,
   upsertAttendanceInSupabase,
@@ -46,15 +54,17 @@ import {
   DEFAULT_ANNOUNCEMENT,
   EMPTY_ATTENDANCE_META,
   EMPTY_WORK_LOCATIONS,
+  findActiveOrTodayLog,
   formatDateEnglish,
   formatTime12h,
   generateInitialAttendance,
   generateInitialDeliverables,
   getAttendanceMetaKey,
   getDayAttendanceMeta,
+  getPersistentWorkLocation,
   getTodayDateString,
-  getWorkLocationForDate,
   INITIAL_USERS,
+  mergeChatMessages,
   OFFICE_MAX_SHIFT_MINUTES,
   STORAGE_KEYS
 } from './utils/storage.ts';
@@ -88,6 +98,20 @@ export default function App() {
     }
     return null;
   });
+
+  const [activeSessionLocation, setActiveSessionLocation] = useState<WorkLocation | null>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.ACTIVE_SESSION_LOCATION);
+      if (stored === 'Home' || stored === 'Office') {
+        return stored;
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  });
+
+  const [currentDateStr, setCurrentDateStr] = useState<string>(() => getTodayDateString());
 
   const [currentViewMode, setCurrentViewMode] = useState<'staff' | 'boss'>('staff');
 
@@ -173,6 +197,44 @@ export default function App() {
 
   const [systemLogoutNotice, setSystemLogoutNotice] = useState<string | null>(null);
 
+  // Studio Chat state
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.CHAT_MESSAGES);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          return mergeChatMessages([], parsed);
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return [];
+  });
+
+  const [chatLastReadByUser, setChatLastReadByUser] = useState<Record<string, number>>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEYS.CHAT_LAST_READ);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return {};
+  });
+
+  const [isChatModalOpen, setIsChatModalOpen] = useState(false);
+  const [onlineChatUsers, setOnlineChatUsers] = useState<StudioChatPresenceUser[]>([]);
+  const chatChannelRef = useRef<RealtimeChannel | null>(null);
+  const isChatModalOpenRef = useRef(false);
+
+  useEffect(() => {
+    isChatModalOpenRef.current = isChatModalOpen;
+  }, [isChatModalOpen]);
+
   // Modals state
   const [inspectingUser, setInspectingUser] = useState<User | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -191,14 +253,15 @@ export default function App() {
       const status = await checkSupabaseStatus();
       setSupabaseStatus(status);
       if (status.tablesReady) {
-        const [dbUsers, dbLogs, dbDeliv, dbLogo, dbAnnouncement, dbWorkLocations, dbAttendanceMeta] = await Promise.all([
+        const [dbUsers, dbLogs, dbDeliv, dbLogo, dbAnnouncement, dbWorkLocations, dbAttendanceMeta, dbChatMessages] = await Promise.all([
           fetchUsersFromSupabase(),
           fetchAttendanceFromSupabase(),
           fetchDeliverablesFromSupabase(),
           fetchStudioLogoFromSupabase(),
           fetchStudioAnnouncementFromSupabase(),
           fetchWorkLocationsFromSupabase(),
-          fetchAttendanceMetaFromSupabase()
+          fetchAttendanceMetaFromSupabase(),
+          fetchChatMessagesFromSupabase()
         ]);
         if (dbUsers && dbUsers.length > 0) setUsers(dbUsers);
         if (dbLogs && dbLogs.length > 0) setAttendanceLogs(dbLogs);
@@ -216,6 +279,9 @@ export default function App() {
           setAttendanceMeta(dbAttendanceMeta);
           localStorage.setItem(STORAGE_KEYS.ATTENDANCE_META, JSON.stringify(dbAttendanceMeta));
         }
+        if (dbChatMessages) {
+          setChatMessages((prev) => mergeChatMessages(prev, dbChatMessages));
+        }
       }
     } catch {
       // offline fallback
@@ -226,11 +292,13 @@ export default function App() {
     refreshSupabaseStatus();
 
     const syncLiveUpdates = async () => {
-      const [latestAnnouncement, latestLocations, latestLogs, latestMeta] = await Promise.all([
+      const [latestAnnouncement, latestLocations, latestLogs, latestMeta, latestChat, latestDeliverables] = await Promise.all([
         fetchStudioAnnouncementFromSupabase(),
         fetchWorkLocationsFromSupabase(),
         fetchAttendanceFromSupabase(),
-        fetchAttendanceMetaFromSupabase()
+        fetchAttendanceMetaFromSupabase(),
+        fetchChatMessagesFromSupabase(),
+        fetchDeliverablesFromSupabase()
       ]);
       if (latestAnnouncement) {
         setAnnouncement(latestAnnouncement);
@@ -247,13 +315,31 @@ export default function App() {
         setAttendanceMeta(latestMeta);
         localStorage.setItem(STORAGE_KEYS.ATTENDANCE_META, JSON.stringify(latestMeta));
       }
+      if (latestChat) {
+        setChatMessages((prev) => mergeChatMessages(prev, latestChat));
+      }
+      if (latestDeliverables && latestDeliverables.length > 0) {
+        setDeliverables(latestDeliverables);
+      }
     };
 
-    const interval = setInterval(syncLiveUpdates, 10000);
-    window.addEventListener('focus', syncLiveUpdates);
+    const checkDateRollover = () => {
+      const latestDate = getTodayDateString();
+      setCurrentDateStr((prev) => (prev === latestDate ? prev : latestDate));
+    };
+
+    const interval = setInterval(() => {
+      checkDateRollover();
+      syncLiveUpdates();
+    }, 10000);
+    const onFocusSync = () => {
+      checkDateRollover();
+      syncLiveUpdates();
+    };
+    window.addEventListener('focus', onFocusSync);
     return () => {
       clearInterval(interval);
-      window.removeEventListener('focus', syncLiveUpdates);
+      window.removeEventListener('focus', onFocusSync);
     };
   }, []);
 
@@ -295,6 +381,66 @@ export default function App() {
     localStorage.setItem(STORAGE_KEYS.ATTENDANCE_META, JSON.stringify(attendanceMeta));
   }, [attendanceMeta]);
 
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.CHAT_MESSAGES, JSON.stringify(chatMessages));
+  }, [chatMessages]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.CHAT_LAST_READ, JSON.stringify(chatLastReadByUser));
+  }, [chatLastReadByUser]);
+
+  // Real-time WebSocket subscription for Studio Chat (Broadcast + Presence + DB changes)
+  useEffect(() => {
+    if (!currentUser) {
+      if (chatChannelRef.current) {
+        supabase.removeChannel(chatChannelRef.current);
+        chatChannelRef.current = null;
+      }
+      setOnlineChatUsers([]);
+      setIsChatModalOpen(false);
+      return;
+    }
+
+    const channel = subscribeToStudioChatChannel(
+      {
+        id: currentUser.id,
+        name: currentUser.name,
+        role: currentUser.role,
+        isBoss: currentUser.isBoss
+      },
+      (incomingMsg) => {
+        setChatMessages((prev) => {
+          if (prev.some((m) => m.id === incomingMsg.id)) return prev;
+          return mergeChatMessages(prev, [incomingMsg]);
+        });
+        if (incomingMsg.senderId !== currentUser.id) {
+          playChime();
+          if (isChatModalOpenRef.current) {
+            setChatLastReadByUser((prev) => ({
+              ...prev,
+              [currentUser.id]: Math.max(Date.now(), incomingMsg.createdAt)
+            }));
+          }
+        }
+      },
+      (remoteMsgs) => {
+        setChatMessages((prev) => mergeChatMessages(prev, remoteMsgs));
+      },
+      (onlineUsersList) => {
+        setOnlineChatUsers(onlineUsersList);
+      }
+    );
+
+    chatChannelRef.current = channel;
+
+    return () => {
+      supabase.removeChannel(channel);
+      if (chatChannelRef.current === channel) {
+        chatChannelRef.current = null;
+      }
+    };
+  }, [currentUser?.id, currentUser?.name, currentUser?.role, currentUser?.isBoss]);
+
   // 9-Hour Office Auto Check-Out & Auto System Logout Watcher
   useEffect(() => {
     const enforceOfficeNineHourRule = () => {
@@ -303,14 +449,18 @@ export default function App() {
 
       const overdueEntries = attendanceLogs
         .map((log) => {
-          if (log.date !== today || !log.isCheckedIn || !log.checkInTimestamp) return null;
+          if (!log.isCheckedIn || !log.checkInTimestamp) return null;
           const staffUser = users.find((u) => u.id === log.empId);
           if (staffUser?.isBoss) return null;
 
-          const dayMeta = getDayAttendanceMeta(attendanceMeta, log.empId, today);
+          const targetDate = log.date || today;
+          const dayMeta = getDayAttendanceMeta(attendanceMeta, log.empId, targetDate);
           const openSession = dayMeta?.sessions?.find((s) => !s.checkOutTime);
+          const sessionLocHint = currentUser?.id === log.empId ? activeSessionLocation : null;
           const effectiveLoc =
-            openSession?.location || getWorkLocationForDate(workLocations, log.empId, today) || 'Office';
+            openSession?.location ||
+            getPersistentWorkLocation(workLocations, log.empId, targetDate, sessionLocHint) ||
+            'Office';
           if (effectiveLoc !== 'Office') return null;
 
           const priorMins = log.totalMinutes || 0;
@@ -322,9 +472,9 @@ export default function App() {
           const allowedSessionMs = allowedSessionMinutes * 60 * 1000;
 
           if (nowMs - log.checkInTimestamp < allowedSessionMs) return null;
-          return { log, allowedSessionMinutes, allowedSessionMs };
+          return { log, targetDate, allowedSessionMinutes, allowedSessionMs };
         })
-        .filter((entry): entry is { log: AttendanceLog; allowedSessionMinutes: number; allowedSessionMs: number } => Boolean(entry));
+        .filter((entry): entry is { log: AttendanceLog; targetDate: string; allowedSessionMinutes: number; allowedSessionMs: number } => Boolean(entry));
 
       if (overdueEntries.length === 0) return;
 
@@ -332,10 +482,10 @@ export default function App() {
       const nextMetaByKey: Record<string, DayAttendanceMeta> = { ...attendanceMeta.byKey };
       let shouldLogoutCurrentUser = false;
 
-      overdueEntries.forEach(({ log, allowedSessionMinutes, allowedSessionMs }) => {
+      overdueEntries.forEach(({ log, targetDate, allowedSessionMinutes, allowedSessionMs }) => {
         const autoOutMs = log.checkInTimestamp + allowedSessionMs;
         const autoOutTimeStr = formatTime12h(new Date(autoOutMs));
-        const key = getAttendanceMetaKey(log.empId, today);
+        const key = getAttendanceMetaKey(log.empId, targetDate);
         const existingMeta = nextMetaByKey[key] || { sessions: [] };
 
         let updatedSessions: WorkSession[];
@@ -388,7 +538,7 @@ export default function App() {
         upsertAttendanceInSupabase(updatedLog);
         updateDayAttendanceMetaInSupabase(
           log.empId,
-          today,
+          targetDate,
           () => nextDayMeta,
           { byKey: nextMetaByKey }
         ).catch(() => {
@@ -415,6 +565,8 @@ export default function App() {
         setSystemLogoutNotice(
           'System Logout: Your 9-hour Office shift limit was reached, so the system automatically checked you out and logged you out. Boss permission is required to check in again today.'
         );
+        setActiveSessionLocation(null);
+        localStorage.removeItem(STORAGE_KEYS.ACTIVE_SESSION_LOCATION);
         setCurrentUser(null);
       }
     };
@@ -422,7 +574,7 @@ export default function App() {
     enforceOfficeNineHourRule();
     const timer = setInterval(enforceOfficeNineHourRule, 5000);
     return () => clearInterval(timer);
-  }, [attendanceLogs, attendanceMeta, workLocations, users, currentUser]);
+  }, [attendanceLogs, attendanceMeta, workLocations, users, currentUser, activeSessionLocation]);
 
   // Sync browser tab favicon with saved studio logo or default NANDAN icon
   useEffect(() => {
@@ -455,10 +607,10 @@ export default function App() {
     });
 
     const todayStr = getTodayDateString();
-    const myLog = attendanceLogs.find((a) => a.empId === currentUser.id && a.date === todayStr);
+    const myLog = findActiveOrTodayLog(attendanceLogs, currentUser.id, todayStr);
     if (myLog && myLog.isCheckedIn) {
       notifications.unshift({
-        id: `notif-checkin-${currentUser.id}-${todayStr}`,
+        id: `notif-checkin-${currentUser.id}-${myLog.date}`,
         title: 'Shift Active',
         desc: `You checked in at ${myLog.checkInTime}. Creative operations running.`,
         time: myLog.checkInTime || 'Today',
@@ -477,26 +629,30 @@ export default function App() {
     const nowTs = now.getTime();
     const timeStr = formatTime12h(now);
 
+    const activeOrToday = findActiveOrTodayLog(attendanceLogs, empId, today);
     const existingLog = attendanceLogs.find((a) => a.empId === empId && a.date === today);
     const staffUser = users.find((u) => u.id === empId);
     const existingMeta = attendanceMeta.byKey[key] || { sessions: [] };
 
     if (!allow) {
+      const targetDate = activeOrToday?.date || today;
+      const targetKey = getAttendanceMetaKey(empId, targetDate);
+      const targetMeta = attendanceMeta.byKey[targetKey] || { sessions: [] };
       const updatedDay: DayAttendanceMeta = {
-        ...existingMeta,
+        ...targetMeta,
         reCheckInAllowed: false,
         reCheckInGrantedAt: undefined
       };
       const nextStore: AttendanceMetaStore = {
         byKey: {
           ...attendanceMeta.byKey,
-          [key]: updatedDay
+          [targetKey]: updatedDay
         }
       };
       setAttendanceMeta(nextStore);
       updateDayAttendanceMetaInSupabase(
         empId,
-        today,
+        targetDate,
         (cur) => ({
           ...cur,
           reCheckInAllowed: false,
@@ -512,11 +668,11 @@ export default function App() {
     }
 
     // If employee is already checked in, just ensure permission marker is set
-    if (existingLog?.isCheckedIn) {
+    if (activeOrToday?.isCheckedIn || existingLog?.isCheckedIn) {
       return;
     }
 
-    const todayLoc: WorkLocation = getWorkLocationForDate(workLocations, empId, today) || 'Office';
+    const todayLoc: WorkLocation = getPersistentWorkLocation(workLocations, empId, today) || 'Office';
 
     // Preserve all completed sessions from earlier today so daily total time adds up cleanly
     let existingSessions: WorkSession[] = existingMeta.sessions ? [...existingMeta.sessions] : [];
@@ -619,11 +775,13 @@ export default function App() {
   const handleCheckIn = async () => {
     if (!currentUser) return;
     const today = getTodayDateString();
+    const activeOrToday = findActiveOrTodayLog(attendanceLogs, currentUser.id, today);
+    if (activeOrToday?.isCheckedIn) return;
     const existing = attendanceLogs.find((a) => a.empId === currentUser.id && a.date === today);
     if (existing?.isCheckedIn) return;
 
     const todayLoc: WorkLocation =
-      getWorkLocationForDate(workLocations, currentUser.id, today) || 'Office';
+      getPersistentWorkLocation(workLocations, currentUser.id, today, activeSessionLocation) || 'Office';
     const dayMeta = getDayAttendanceMeta(attendanceMeta, currentUser.id, today);
 
     const hasCheckedOutBeforeToday = Boolean(
@@ -645,6 +803,39 @@ export default function App() {
     const nowTs = now.getTime();
     const timeStr = formatTime12h(now);
     const metaKey = getAttendanceMetaKey(currentUser.id, today);
+
+    // Persist today's work location (Home/Office) on every day's Check-In so multi-day
+    // browser sessions without re-login always save & display the original login mode
+    const existingDateLoc = workLocations.byDate?.[`${currentUser.id}__${today}`];
+    const existingLatest = workLocations.latestByEmp?.[currentUser.id];
+    if (existingDateLoc !== todayLoc || !existingLatest || existingLatest.date !== today || existingLatest.location !== todayLoc) {
+      const preservedLoginTime =
+        existingLatest && existingLatest.date === today && existingLatest.loginTime
+          ? existingLatest.loginTime
+          : timeStr;
+      const nextWorkLocStore: WorkLocationStore = {
+        latestByEmp: {
+          ...workLocations.latestByEmp,
+          [currentUser.id]: { location: todayLoc, loginTime: preservedLoginTime, date: today }
+        },
+        byDate: {
+          ...workLocations.byDate,
+          [`${currentUser.id}__${today}`]: todayLoc
+        }
+      };
+      setWorkLocations(nextWorkLocStore);
+      upsertEmployeeWorkLocationInSupabase(
+        currentUser.id,
+        today,
+        preservedLoginTime,
+        todayLoc,
+        nextWorkLocStore
+      )
+        .then((merged) => setWorkLocations(merged))
+        .catch(() => {
+          // offline fallback
+        });
+    }
 
     // Preserve prior completed sessions today (for Home multiple check-in or Boss-approved Office re-check-in)
     let existingSessions: WorkSession[] = dayMeta?.sessions ? [...dayMeta.sessions] : [];
@@ -749,11 +940,13 @@ export default function App() {
   const handleCheckOut = async () => {
     if (!currentUser) return;
     const today = getTodayDateString();
-    const activeLog = attendanceLogs.find(
-      (log) => log.empId === currentUser.id && log.date === today && log.isCheckedIn
-    );
+    const candidateLog = findActiveOrTodayLog(attendanceLogs, currentUser.id, today);
+    const activeLog = candidateLog?.isCheckedIn
+      ? candidateLog
+      : attendanceLogs.find((log) => log.empId === currentUser.id && log.isCheckedIn);
     if (!activeLog) return;
 
+    const logDate = activeLog.date || today;
     const now = new Date();
     const nowTs = now.getTime();
     const timeStr = formatTime12h(now);
@@ -761,8 +954,8 @@ export default function App() {
     const sessionMins = Math.max(1, Math.round(Math.max(0, nowTs - startMs) / 60000));
 
     const todayLoc: WorkLocation =
-      getWorkLocationForDate(workLocations, currentUser.id, today) || 'Office';
-    const metaKey = getAttendanceMetaKey(currentUser.id, today);
+      getPersistentWorkLocation(workLocations, currentUser.id, logDate, activeSessionLocation) || 'Office';
+    const metaKey = getAttendanceMetaKey(currentUser.id, logDate);
     const existingMeta = attendanceMeta.byKey[metaKey] || { sessions: [] };
 
     let updatedSessions: WorkSession[];
@@ -820,7 +1013,7 @@ export default function App() {
     upsertAttendanceInSupabase(updatedLog);
     updateDayAttendanceMetaInSupabase(
       currentUser.id,
-      today,
+      logDate,
       () => nextDayMeta,
       nextMetaStore
     )
@@ -848,7 +1041,7 @@ export default function App() {
     if (!currentUser) return false;
     if (currentUser.isBoss) return true;
     const today = getTodayDateString();
-    const myTodayLog = attendanceLogs.find((a) => a.empId === currentUser.id && a.date === today);
+    const myTodayLog = findActiveOrTodayLog(attendanceLogs, currentUser.id, today);
     return Boolean(myTodayLog?.isCheckedIn);
   };
 
@@ -1029,6 +1222,8 @@ export default function App() {
         }
       };
       setWorkLocations(nextStore);
+      setActiveSessionLocation(workLocation);
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_SESSION_LOCATION, workLocation);
       upsertEmployeeWorkLocationInSupabase(user.id, today, loginTime, workLocation, nextStore)
         .then((merged) => setWorkLocations(merged))
         .catch(() => {
@@ -1043,6 +1238,8 @@ export default function App() {
   };
 
   const handleSignOut = () => {
+    setActiveSessionLocation(null);
+    localStorage.removeItem(STORAGE_KEYS.ACTIVE_SESSION_LOCATION);
     setCurrentUser(null);
   };
 
@@ -1186,6 +1383,102 @@ export default function App() {
     }, 120);
   };
 
+  // Studio Chat handlers
+  const markChatAsReadForCurrentUser = (messagesRefList: ChatMessage[] = chatMessages) => {
+    if (!currentUser) return;
+    const latestTs =
+      messagesRefList.length > 0
+        ? Math.max(Date.now(), messagesRefList[messagesRefList.length - 1].createdAt)
+        : Date.now();
+    setChatLastReadByUser((prev) => ({
+      ...prev,
+      [currentUser.id]: latestTs
+    }));
+  };
+
+  const handleOpenChatModal = () => {
+    setIsChatModalOpen(true);
+    markChatAsReadForCurrentUser(chatMessages);
+    fetchChatMessagesFromSupabase()
+      .then((remote) => {
+        if (remote) {
+          setChatMessages((prev) => {
+            const merged = mergeChatMessages(prev, remote);
+            markChatAsReadForCurrentUser(merged);
+            return merged;
+          });
+        }
+      })
+      .catch(() => {
+        // offline fallback
+      });
+  };
+
+  const handleSendChatMessage = (text: string) => {
+    if (!currentUser) return;
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    const now = new Date();
+    const nowTs = now.getTime();
+    const newMsg: ChatMessage = {
+      id: `chat-${nowTs}-${Math.random().toString(36).slice(2, 7)}`,
+      senderId: currentUser.id,
+      senderName: currentUser.name,
+      senderRole: currentUser.role,
+      isBoss: currentUser.isBoss,
+      text: trimmed,
+      time: formatTime12h(now),
+      date: getTodayDateString(now),
+      dateLabel: formatDateEnglish(now),
+      createdAt: nowTs
+    };
+
+    // Optimistic local state update (idempotent by id)
+    setChatMessages((prev) => mergeChatMessages(prev, [newMsg]));
+    setChatLastReadByUser((prev) => ({
+      ...prev,
+      [currentUser.id]: nowTs
+    }));
+
+    // Instant live WebSocket broadcast via Supabase Realtime channel
+    if (chatChannelRef.current) {
+      chatChannelRef.current
+        .send({
+          type: 'broadcast',
+          event: 'chat:message',
+          payload: newMsg
+        })
+        .catch(() => {
+          // ignore transient broadcast error
+        });
+    }
+
+    // Authoritative persistence in Supabase
+    appendChatMessageInSupabase(newMsg, chatMessages)
+      .then((merged) => setChatMessages((prev) => mergeChatMessages(prev, merged)))
+      .catch(() => {
+        // offline fallback
+      });
+
+    // Express API sync fallback
+    fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newMsg)
+    }).catch(() => {
+      // static / offline fallback
+    });
+  };
+
+  const currentUserChatLastRead = currentUser ? (chatLastReadByUser[currentUser.id] || 0) : 0;
+  const unreadChatCount =
+    currentUser && !isChatModalOpen
+      ? chatMessages.filter(
+          (m) => m.senderId !== currentUser.id && m.createdAt > currentUserChatLastRead
+        ).length
+      : 0;
+
   // Export handlers
   const handleExportCSV = (timeframe: ExportTimeframe, filterMember: string) => {
     executeExportCSV(users, attendanceLogs, deliverables, filterMember, timeframe, workLocations, attendanceMeta);
@@ -1199,16 +1492,17 @@ export default function App() {
     setIsDownloadModalOpen(false);
   };
 
-  // Current user's today attendance log & 5-day logs
-  const todayStr = getTodayDateString();
+  // Current user's today attendance log & 5-day logs (synced to canonical Studio Timezone BDT)
+  const todayStr = currentDateStr;
   const currentUserTodayLog = currentUser
-    ? attendanceLogs.find((a) => a.empId === currentUser.id && a.date === todayStr)
+    ? findActiveOrTodayLog(attendanceLogs, currentUser.id, todayStr)
     : undefined;
+  const effectiveUserDate = currentUserTodayLog?.date || todayStr;
   const currentUserTodayWorkLocation = currentUser
-    ? getWorkLocationForDate(workLocations, currentUser.id, todayStr)
+    ? getPersistentWorkLocation(workLocations, currentUser.id, effectiveUserDate, activeSessionLocation)
     : null;
   const currentUserTodayMeta = currentUser
-    ? getDayAttendanceMeta(attendanceMeta, currentUser.id, todayStr)
+    ? getDayAttendanceMeta(attendanceMeta, currentUser.id, effectiveUserDate)
     : null;
 
   const currentUser5DayLogs = currentUser
@@ -1237,6 +1531,8 @@ export default function App() {
             onOpenLogoModal={() => setIsLogoModalOpen(true)}
             onOpenProfileModal={() => setIsProfileModalOpen(true)}
             onOpenRegisterModal={() => setIsRegisterModalOpen(true)}
+            onOpenChatModal={handleOpenChatModal}
+            unreadChatCount={unreadChatCount}
             onSignOut={handleSignOut}
             notifications={notifications}
             readNotifIds={readNotifIds}
@@ -1348,6 +1644,20 @@ export default function App() {
           attendanceMeta={attendanceMeta}
           onToggleReCheckInPermission={handleToggleReCheckInPermission}
           onClose={() => setInspectingUser(null)}
+        />
+      )}
+
+      {isChatModalOpen && currentUser && (
+        <StudioChatModal
+          currentUser={currentUser}
+          users={users}
+          messages={chatMessages}
+          onlineUsers={onlineChatUsers}
+          onSendMessage={handleSendChatMessage}
+          onClose={() => {
+            markChatAsReadForCurrentUser(chatMessages);
+            setIsChatModalOpen(false);
+          }}
         />
       )}
     </div>

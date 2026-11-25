@@ -7,12 +7,25 @@ import {
   WorkLocationStore
 } from '../types.ts';
 import {
+  findActiveOrTodayLog,
+  formatDateEnglish,
   formatDurationShort,
   formatSessionsSummary,
   getDayAttendanceMeta,
+  getLastNDaysStudioDates,
   getTodayDateString,
   getWorkLocationForDate
 } from './storage.ts';
+
+function formatTaskDateLabel(dateStr?: string): string {
+  if (!dateStr) return '—';
+  const parts = dateStr.split('-').map(Number);
+  if (parts.length === 3 && parts.every((n) => !Number.isNaN(n))) {
+    const [y, m, d] = parts;
+    return formatDateEnglish(new Date(Date.UTC(y, m - 1, d, 6, 0, 0)));
+  }
+  return dateStr;
+}
 
 export interface DailySessionReportRow {
   date: string;
@@ -50,19 +63,21 @@ export function calculateStaffPeriodStats(
   const numDays = timeframe === 'daily' ? 1 : (timeframe === 'weekly' ? 7 : 30);
   const now = new Date();
 
-  // Gather target dates in timeframe
-  const targetDates: string[] = [];
-  for (let i = 0; i < numDays; i++) {
-    const d = new Date(now);
-    d.setDate(now.getDate() - i);
-    targetDates.push(getTodayDateString(d));
-  }
+  // Gather target dates in timeframe anchored strictly to Studio Timezone (Asia/Dhaka)
+  const targetDates = getLastNDaysStudioDates(numDays, now)
+    .map((slot) => slot.dateStr)
+    .reverse();
 
-  const relevantLogs = attendanceLogs.filter(a => a.empId === empId && targetDates.includes(a.date));
-  const todayLog = relevantLogs.find(a => a.date === today);
+  const todayLog = findActiveOrTodayLog(attendanceLogs, empId, today);
+  const relevantLogs = attendanceLogs.filter(
+    (a) => a.empId === empId && (targetDates.includes(a.date) || (todayLog && a.id === todayLog.id))
+  );
 
   // Present dates vs absent count
   const attendedDates = new Set(relevantLogs.map(l => l.date));
+  if (todayLog) {
+    attendedDates.add(today);
+  }
   let absentCount = 0;
   targetDates.forEach(dateStr => {
     if (!attendedDates.has(dateStr)) {
@@ -70,16 +85,28 @@ export function calculateStaffPeriodStats(
     }
   });
 
+  const resolveLocForDate = (dateStr: string, logForDate?: AttendanceLog) => {
+    const direct = getWorkLocationForDate(workLocations, empId, dateStr, false);
+    if (direct) return direct;
+    const metaForDate = getDayAttendanceMeta(attendanceMeta, empId, dateStr);
+    if (metaForDate?.sessions?.[0]?.location) return metaForDate.sessions[0].location;
+    if (logForDate && dateStr === today) {
+      return getWorkLocationForDate(workLocations, empId, dateStr, true);
+    }
+    return null;
+  };
+
   // Compute work location summary for period
   let workLocation = 'Not Signed In';
   if (timeframe === 'daily') {
-    const loc = getWorkLocationForDate(workLocations, empId, today);
+    const loc = resolveLocForDate(today, todayLog);
     workLocation = loc === 'Office' ? 'From Office' : loc === 'Home' ? 'From Home' : 'Not Signed In';
   } else {
     let officeDays = 0;
     let homeDays = 0;
     targetDates.forEach((dateStr) => {
-      const loc = getWorkLocationForDate(workLocations, empId, dateStr);
+      const logForDate = relevantLogs.find((l) => l.date === dateStr);
+      const loc = resolveLocForDate(dateStr, logForDate);
       if (loc === 'Office') officeDays++;
       if (loc === 'Home') homeDays++;
     });
@@ -101,7 +128,7 @@ export function calculateStaffPeriodStats(
   targetDates.forEach((dateStr) => {
     const logForDate = relevantLogs.find((l) => l.date === dateStr);
     const metaForDate = getDayAttendanceMeta(attendanceMeta, empId, dateStr);
-    const locForDate = getWorkLocationForDate(workLocations, empId, dateStr);
+    const locForDate = resolveLocForDate(dateStr, logForDate);
     const isSysOut = Boolean(metaForDate?.systemLogout);
     if (isSysOut) systemLogoutDays++;
 
@@ -153,14 +180,16 @@ export function calculateStaffPeriodStats(
           : 'No sessions');
 
   const totalMins = relevantLogs.reduce((acc, l) => {
-    if (l.date === today && l.isCheckedIn && l.checkInTimestamp) {
+    if (l.isCheckedIn && l.checkInTimestamp) {
       const liveMins = Math.max(0, Math.round((now.getTime() - l.checkInTimestamp) / 60000));
       return acc + (l.totalMinutes || 0) + liveMins;
     }
     return acc + (l.totalMinutes || 0);
   }, 0);
 
-  const relevantTasks = deliverables.filter(d => d.empId === empId && targetDates.includes(d.date));
+  const relevantTasks = deliverables
+    .filter(d => d.empId === empId && targetDates.includes(d.date))
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   const completedCount = relevantTasks.filter(t => t.progress >= 100).length;
 
   const checkInDisplay =
@@ -208,7 +237,14 @@ export function executeExportCSV(
 
   targetUsers.forEach(staff => {
     const stats = calculateStaffPeriodStats(attendanceLogs, deliverables, staff.id, timeframe, workLocations, attendanceMeta);
-    const tasksSummary = stats.tasks.map(t => `${t.title} (${t.progress}%)`).join('; ') || 'No tasks';
+    const tasksSummary =
+      stats.tasks
+        .map((t) => {
+          const datePart = formatTaskDateLabel(t.date);
+          const timePart = t.timestamp ? ` ${t.timestamp}` : '';
+          return `[${datePart}${timePart}] ${t.category}: ${t.title} (${t.progress}%)`;
+        })
+        .join('; ') || 'No tasks';
     const cleanTasks = tasksSummary.replace(/"/g, '""');
     const cleanSessions = stats.sessionsSummary.replace(/"/g, '""');
 
@@ -286,12 +322,16 @@ export function generateAndPrintPDFReport(
     const taskRowsHtml = stats.tasks.length > 0 ? stats.tasks.map((t, idx) => `
       <tr style="border-bottom: 1px solid #f1f5f9; font-size: 11px;">
         <td style="padding: 6px 10px; color: #64748b; width: 25px;">${idx + 1}.</td>
+        <td style="padding: 6px 10px; white-space: nowrap;">
+          <div style="font-weight: 700; color: #0f172a; font-size: 10.5px;">${escapeHtml(formatTaskDateLabel(t.date))}</div>
+          ${t.timestamp ? `<div style="font-family: monospace; color: #64748b; font-size: 9px; margin-top: 1px;">${escapeHtml(t.timestamp)}</div>` : ''}
+        </td>
         <td style="padding: 6px 10px; font-weight: 600; color: #0f172a;">${escapeHtml(t.title)}</td>
         <td style="padding: 6px 10px; color: #475569;"><span style="background:#0f172a; color:#fff; padding:2px 6px; border-radius:4px; font-size:9px; font-weight:bold;">${escapeHtml(t.category)}</span></td>
         <td style="padding: 6px 10px; text-align: center; font-weight: bold; color: ${t.progress >= 100 ? '#059669' : '#e11d48'};">${t.progress}%</td>
         <td style="padding: 6px 10px; color: #64748b; font-size: 10px;">${escapeHtml(t.notes || '—')}</td>
       </tr>
-    `).join('') : `<tr><td colspan="5" style="padding: 10px; text-align: center; color: #94a3b8; font-size: 11px; font-style: italic;">No specific deliverable tasks logged for this timeframe</td></tr>`;
+    `).join('') : `<tr><td colspan="6" style="padding: 10px; text-align: center; color: #94a3b8; font-size: 11px; font-style: italic;">No specific deliverable tasks logged for this timeframe</td></tr>`;
 
     return `
       <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; margin-bottom: 20px; padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); page-break-inside: avoid;">
@@ -350,6 +390,7 @@ export function generateAndPrintPDFReport(
             <thead>
               <tr style="background: #f1f5f9; color: #475569; font-size: 9px; text-transform: uppercase; font-weight: bold;">
                 <th style="padding: 6px 10px;">#</th>
+                <th style="padding: 6px 10px;">Date</th>
                 <th style="padding: 6px 10px;">Task Title</th>
                 <th style="padding: 6px 10px;">Category</th>
                 <th style="padding: 6px 10px; text-align: center;">Completion</th>
@@ -402,7 +443,7 @@ export function generateAndPrintPDFReport(
           <div style="background: #0f172a; color: #fff; font-size: 10px; font-weight: 800; padding: 4px 10px; border-radius: 6px; display: inline-block;">
             ${timeframeTitle.toUpperCase()} REPORT
           </div>
-          <div style="font-size: 10px; color: #64748b; font-weight: 600; margin-top: 4px;">Generated: ${new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</div>
+          <div style="font-size: 10px; color: #64748b; font-weight: 600; margin-top: 4px;">Generated: ${formatDateEnglish(new Date())} (Studio Time BDT)</div>
         </div>
       </div>
 

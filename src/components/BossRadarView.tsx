@@ -1,6 +1,12 @@
 import React, { useState } from 'react';
 import { AttendanceLog, AttendanceMetaStore, Deliverable, User, WorkLocationStore } from '../types.ts';
-import { getDayAttendanceMeta, getTodayDateString, getWorkLocationForDate } from '../utils/storage.ts';
+import {
+  findActiveOrTodayLog,
+  formatDateEnglish,
+  getDayAttendanceMeta,
+  getTodayDateString,
+  getWorkLocationForDate
+} from '../utils/storage.ts';
 import { WeeklyHeatmapChart } from './WeeklyHeatmapChart.tsx';
 
 interface BossRadarViewProps {
@@ -33,14 +39,18 @@ export const BossRadarView: React.FC<BossRadarViewProps> = ({
 
   const staffList = users.filter(u => !u.isBoss);
 
-  // Stats calculation
+  // Stats calculation (unified Studio Timezone + live active lookup across all timezones)
   let activeDutyCount = 0;
   let officeSignInCount = 0;
   let homeSignInCount = 0;
   staffList.forEach(s => {
-    const log = attendanceLogs.find(a => a.empId === s.id && a.date === today);
+    const log = findActiveOrTodayLog(attendanceLogs, s.id, today);
+    const effectiveDate = log?.date || today;
+    const meta = getDayAttendanceMeta(attendanceMeta, s.id, effectiveDate);
     if (log && log.isCheckedIn) activeDutyCount++;
-    const loc = getWorkLocationForDate(workLocations, s.id, today);
+    const loc =
+      getWorkLocationForDate(workLocations, s.id, effectiveDate, false) ||
+      (log ? (meta?.sessions?.[0]?.location || getWorkLocationForDate(workLocations, s.id, effectiveDate, true)) : null);
     if (loc === 'Office') officeSignInCount++;
     if (loc === 'Home') homeSignInCount++;
   });
@@ -64,11 +74,17 @@ export const BossRadarView: React.FC<BossRadarViewProps> = ({
       <section className="glass-panel rounded-3xl p-5 sm:p-6 flex flex-col gap-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
-              Director Live Operations Console
-            </h2>
-            <p className="text-xs sm:text-sm font-semibold text-slate-500">
-              Real-time attendance radar, workflow monitoring &amp; confidential task delegation.
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
+                Director Live Operations Console
+              </h2>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                <i className="fa-solid fa-earth-asia text-emerald-600 text-[10px]"></i>
+                Studio Date: {formatDateEnglish(new Date())} (BDT)
+              </span>
+            </div>
+            <p className="text-xs sm:text-sm font-semibold text-slate-500 mt-0.5">
+              Real-time global attendance radar, workflow monitoring &amp; confidential task delegation.
             </p>
           </div>
           <div className="flex items-center gap-2.5 flex-wrap">
@@ -186,12 +202,18 @@ export const BossRadarView: React.FC<BossRadarViewProps> = ({
                 </tr>
               ) : (
                 filteredStaff.map((staff) => {
-                  const log = attendanceLogs.find(a => a.empId === staff.id && a.date === today);
+                  const log = findActiveOrTodayLog(attendanceLogs, staff.id, today);
+                  const effectiveDate = log?.date || today;
                   const isPresent = Boolean(log?.isCheckedIn);
-                  const dayMeta = getDayAttendanceMeta(attendanceMeta, staff.id, today);
-                  const todayLoc = getWorkLocationForDate(workLocations, staff.id, today);
+                  const dayMeta = getDayAttendanceMeta(attendanceMeta, staff.id, effectiveDate);
+                  const todayLoc =
+                    getWorkLocationForDate(workLocations, staff.id, effectiveDate, false) ||
+                    (log ? (dayMeta?.sessions?.[0]?.location || getWorkLocationForDate(workLocations, staff.id, effectiveDate, true)) : null);
                   const latestRecord = workLocations.latestByEmp?.[staff.id];
-                  const loginTimeToday = latestRecord && latestRecord.date === today ? latestRecord.loginTime : null;
+                  const loginTimeToday =
+                    latestRecord && (latestRecord.date === today || latestRecord.date === effectiveDate)
+                      ? latestRecord.loginTime
+                      : null;
 
                   const hasCheckedOutToday = Boolean(
                     log &&

@@ -1,13 +1,15 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, RealtimeChannel } from '@supabase/supabase-js';
 import {
   AttendanceLog,
   AttendanceMetaStore,
+  ChatMessage,
   DayAttendanceMeta,
   Deliverable,
   User,
   WorkLocation,
   WorkLocationStore
 } from '../types.ts';
+import { mergeChatMessages } from './storage.ts';
 
 export const SUPABASE_URL =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL) ||
@@ -405,3 +407,135 @@ export async function updateDayAttendanceMetaInSupabase(
   await saveAttendanceMetaInSupabase(next);
   return next;
 }
+
+const STUDIO_CHAT_SETTINGS_KEY = 'studio_chat_messages_v1';
+
+/**
+ * Fetch Studio Chat group message history from Supabase studio_settings
+ */
+export async function fetchChatMessagesFromSupabase(): Promise<ChatMessage[] | null> {
+  try {
+    const { data, error } = await supabase
+      .from('studio_settings')
+      .select('value')
+      .eq('key', STUDIO_CHAT_SETTINGS_KEY)
+      .maybeSingle();
+    if (error || !data || !data.value) return null;
+    const parsed = JSON.parse(data.value);
+    if (Array.isArray(parsed)) {
+      return mergeChatMessages([], parsed);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch-merge-upsert a new Studio Chat message in Supabase safely across concurrent users
+ */
+export async function appendChatMessageInSupabase(
+  newMessage: ChatMessage,
+  fallbackMessages: ChatMessage[] = []
+): Promise<ChatMessage[]> {
+  const remote = await fetchChatMessagesFromSupabase();
+  const base = remote || fallbackMessages;
+  const merged = mergeChatMessages(base, [newMessage]);
+  try {
+    await supabase.from('studio_settings').upsert({
+      key: STUDIO_CHAT_SETTINGS_KEY,
+      value: JSON.stringify(merged),
+      updated_at: new Date().toISOString()
+    });
+  } catch {
+    // offline fallback
+  }
+  return merged;
+}
+
+export interface StudioChatPresenceUser {
+  id: string;
+  name: string;
+  role: string;
+  isBoss: boolean;
+}
+
+/**
+ * Subscribe to the live Studio Chat Realtime WebSocket channel (Broadcast + Presence + DB changes)
+ */
+export function subscribeToStudioChatChannel(
+  currentUser: StudioChatPresenceUser,
+  onIncomingMessage: (msg: ChatMessage) => void,
+  onRemoteHistoryUpdate: (messages: ChatMessage[]) => void,
+  onOnlineUsersChange: (users: StudioChatPresenceUser[]) => void
+): RealtimeChannel {
+  const channel = supabase.channel('nandan-studio-chat-room', {
+    config: {
+      broadcast: { self: false },
+      presence: { key: currentUser.id }
+    }
+  });
+
+  channel
+    .on('broadcast', { event: 'chat:message' }, ({ payload }) => {
+      if (payload && typeof payload === 'object' && typeof payload.id === 'string') {
+        onIncomingMessage(payload as ChatMessage);
+      }
+    })
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'studio_settings',
+        filter: `key=eq.${STUDIO_CHAT_SETTINGS_KEY}`
+      },
+      (payload: any) => {
+        try {
+          const rawVal = payload?.new?.value;
+          if (rawVal) {
+            const parsed = JSON.parse(rawVal);
+            if (Array.isArray(parsed)) {
+              onRemoteHistoryUpdate(mergeChatMessages([], parsed));
+            }
+          }
+        } catch {
+          // ignore parse error
+        }
+      }
+    )
+    .on('presence', { event: 'sync' }, () => {
+      const state = channel.presenceState<StudioChatPresenceUser>();
+      const onlineMap = new Map<string, StudioChatPresenceUser>();
+      Object.values(state).forEach((presences) => {
+        presences.forEach((p) => {
+          if (p && p.id) {
+            onlineMap.set(p.id, {
+              id: p.id,
+              name: p.name,
+              role: p.role,
+              isBoss: Boolean(p.isBoss)
+            });
+          }
+        });
+      });
+      onOnlineUsersChange(Array.from(onlineMap.values()));
+    })
+    .subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        try {
+          await channel.track({
+            id: currentUser.id,
+            name: currentUser.name,
+            role: currentUser.role,
+            isBoss: currentUser.isBoss
+          });
+        } catch {
+          // ignore presence track error
+        }
+      }
+    });
+
+  return channel;
+}
+

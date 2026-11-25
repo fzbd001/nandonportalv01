@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { formatTime12h } from '../utils/storage.ts';
+import { formatStudioClockHeader } from '../utils/storage.ts';
 import { NotificationItem, User } from '../types.ts';
 
 interface HeaderProps {
@@ -10,6 +10,8 @@ interface HeaderProps {
   onOpenLogoModal: () => void;
   onOpenProfileModal: () => void;
   onOpenRegisterModal: () => void;
+  onOpenChatModal: () => void;
+  unreadChatCount: number;
   onSignOut: () => void;
   notifications: NotificationItem[];
   readNotifIds: string[];
@@ -26,6 +28,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenLogoModal,
   onOpenProfileModal,
   onOpenRegisterModal,
+  onOpenChatModal,
+  unreadChatCount,
   onSignOut,
   notifications,
   readNotifIds,
@@ -39,10 +43,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   useEffect(() => {
     const update = () => {
-      const now = new Date();
-      const timeStr = formatTime12h(now);
-      const dayStr = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-      setClockString(`${timeStr} • ${dayStr}`);
+      setClockString(formatStudioClockHeader(new Date()));
     };
     update();
     const interval = setInterval(update, 1000);
@@ -132,6 +133,26 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </div>
         )}
+
+        {/* Studio Chat Button with Unread Badge (directly left of Notification Bell) */}
+        <button
+          type="button"
+          onClick={() => {
+            setIsNotifOpen(false);
+            setIsProfileOpen(false);
+            onOpenChatModal();
+          }}
+          className="relative h-10 px-3 sm:px-3.5 rounded-full bg-white/85 border border-slate-200/90 flex items-center justify-center gap-2 text-slate-700 hover:text-slate-900 hover:bg-white hover:border-rose-200 transition-all shadow-sm focus:outline-none cursor-pointer"
+          title="Open Studio Chat"
+        >
+          <i className="fa-solid fa-comments text-rose-500 text-sm"></i>
+          <span className="text-xs font-bold hidden sm:inline">Studio Chat</span>
+          {unreadChatCount > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-rose-500 text-white rounded-full text-[9px] font-extrabold flex items-center justify-center shadow ring-2 ring-white">
+              {unreadChatCount > 99 ? '99+' : unreadChatCount}
+            </span>
+          )}
+        </button>
 
         {/* Notification Bell with Dropdown */}
         <div id="notif-dropdown-container" className="relative">

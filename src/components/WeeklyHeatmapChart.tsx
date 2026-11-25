@@ -13,7 +13,7 @@ import {
   Cell
 } from 'recharts';
 import { AttendanceLog, Deliverable, User } from '../types.ts';
-import { getTodayDateString } from '../utils/storage.ts';
+import { findActiveOrTodayLog, getLastNDaysStudioDates, getTodayDateString } from '../utils/storage.ts';
 
 interface WeeklyHeatmapChartProps {
   users: User[];
@@ -56,29 +56,8 @@ export const WeeklyHeatmapChart: React.FC<WeeklyHeatmapChartProps> = ({
   const now = new Date();
   const todayStr = getTodayDateString(now);
 
-  // Generate last 7 days window (6 days ago through today)
-  const last7Days = Array.from({ length: 7 }, (_, idx) => {
-    const daysAgo = 6 - idx;
-    const d = new Date(now);
-    d.setDate(now.getDate() - daysAgo);
-    const dateStr = getTodayDateString(d);
-    const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
-    const dayNum = d.getDate();
-    const monthShort = d.toLocaleDateString('en-US', { month: 'short' });
-    const isToday = daysAgo === 0;
-
-    return {
-      daysAgo,
-      dateStr,
-      dayName,
-      dayNum,
-      monthShort,
-      shortLabel: isToday ? 'Today' : `${dayName}`,
-      fullLabel: isToday ? `Today (${monthShort} ${dayNum})` : `${dayName}, ${monthShort} ${dayNum}`,
-      isToday,
-      dateObj: d
-    };
-  });
+  // Generate last 7 days window anchored strictly to Studio Timezone (Asia/Dhaka)
+  const last7Days = getLastNDaysStudioDates(7, now);
 
   // Calculate staff matrix data & daily aggregates
   const dailyChartData = last7Days.map((day) => {
@@ -87,7 +66,9 @@ export const WeeklyHeatmapChart: React.FC<WeeklyHeatmapChartProps> = ({
     const memberHours: Record<string, number> = {};
 
     staffList.forEach((staff) => {
-      const log = attendanceLogs.find((a) => a.empId === staff.id && a.date === day.dateStr);
+      const log = day.isToday
+        ? findActiveOrTodayLog(attendanceLogs, staff.id, todayStr)
+        : attendanceLogs.find((a) => a.empId === staff.id && a.date === day.dateStr);
       let mins = 0;
 
       if (log) {
@@ -145,7 +126,7 @@ export const WeeklyHeatmapChart: React.FC<WeeklyHeatmapChartProps> = ({
   // Helper for Heatmap Cell intensity styling
   const getCellIntensityClass = (minutes: number, isCheckedIn: boolean) => {
     if (isCheckedIn) {
-      return 'bg-emerald-500 text-white font-bold ring-2 ring-emerald-300 shadow-sm animate-pulse';
+      return 'bg-emerald-500 text-white font-bold ring-2 ring-emerald-200 shadow-sm animate-pulse';
     }
     if (minutes <= 0) {
       return 'bg-slate-100/80 text-slate-400 border border-slate-200/60 hover:bg-slate-200/70';
@@ -156,7 +137,7 @@ export const WeeklyHeatmapChart: React.FC<WeeklyHeatmapChartProps> = ({
     }
     if (minutes <= 360) {
       // 2h - 6h
-      return 'bg-rose-200 text-rose-800 border border-rose-300 font-medium hover:bg-rose-300';
+      return 'bg-rose-200 text-rose-800 border border-rose-300 font-semibold hover:bg-rose-300';
     }
     if (minutes <= 540) {
       // 6h - 9h (Standard shift)
@@ -293,7 +274,7 @@ export const WeeklyHeatmapChart: React.FC<WeeklyHeatmapChartProps> = ({
                     <th
                       key={d.dateStr}
                       className={`py-3 px-2 text-center min-w-[70px] ${
-                        d.isToday ? 'bg-rose-50/80 text-rose-700 font-extrabold' : ''
+                        d.isToday ? 'bg-rose-50/70 text-rose-600 font-extrabold' : ''
                       }`}
                     >
                       <div className="text-[11px]">{d.dayName}</div>
@@ -312,9 +293,9 @@ export const WeeklyHeatmapChart: React.FC<WeeklyHeatmapChartProps> = ({
                   let presentDays = 0;
 
                   const cells = last7Days.map((day) => {
-                    const log = attendanceLogs.find(
-                      (a) => a.empId === staff.id && a.date === day.dateStr
-                    );
+                    const log = day.isToday
+                      ? findActiveOrTodayLog(attendanceLogs, staff.id, todayStr)
+                      : attendanceLogs.find((a) => a.empId === staff.id && a.date === day.dateStr);
                     const isToday = day.isToday;
                     const isCheckedIn = Boolean(isToday && log?.isCheckedIn);
                     let minutes = 0;
@@ -380,7 +361,7 @@ export const WeeklyHeatmapChart: React.FC<WeeklyHeatmapChartProps> = ({
                         return (
                           <td
                             key={day.dateStr}
-                            className={`p-1.5 text-center ${day.isToday ? 'bg-rose-50/40' : ''}`}
+                            className={`p-1.5 text-center ${day.isToday ? 'bg-rose-50/30' : ''}`}
                           >
                             <div
                               onMouseEnter={() =>
@@ -452,7 +433,7 @@ export const WeeklyHeatmapChart: React.FC<WeeklyHeatmapChartProps> = ({
                     hoveredCell.status === 'On Active Duty'
                       ? 'bg-emerald-500 text-white animate-pulse'
                       : hoveredCell.status === 'Completed Shift'
-                      ? 'bg-rose-500/30 text-rose-200 border border-rose-400/40'
+                      ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
                       : 'bg-slate-800 text-slate-400'
                   }`}
                 >
@@ -486,7 +467,7 @@ export const WeeklyHeatmapChart: React.FC<WeeklyHeatmapChartProps> = ({
                   <span>Overtime (9h+)</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="w-3.5 h-3.5 rounded-md bg-emerald-500"></span>
+                  <span className="w-3.5 h-3.5 rounded-md bg-emerald-500 ring-2 ring-emerald-200"></span>
                   <span>Active Live</span>
                 </div>
               </div>

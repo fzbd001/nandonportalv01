@@ -59,7 +59,23 @@ let users: User[] = [
   { id: "EMP-104", name: "Belal", role: "Social Media Strategist & Manager", isBoss: false, password: "1234" }
 ];
 
+const STUDIO_TIMEZONE = 'Asia/Dhaka';
+
 function getTodayDateString(d = new Date()): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: STUDIO_TIMEZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(d);
+    const year = parts.find((p) => p.type === 'year')?.value;
+    const month = parts.find((p) => p.type === 'month')?.value;
+    const day = parts.find((p) => p.type === 'day')?.value;
+    if (year && month && day) return `${year}-${month}-${day}`;
+  } catch {
+    // fallback
+  }
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
@@ -67,6 +83,20 @@ function getTodayDateString(d = new Date()): string {
 }
 
 function formatDateEnglish(dateObj: Date): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: STUDIO_TIMEZONE,
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    }).formatToParts(dateObj);
+    const day = parts.find((p) => p.type === 'day')?.value;
+    const month = parts.find((p) => p.type === 'month')?.value;
+    const year = parts.find((p) => p.type === 'year')?.value;
+    if (day && month && year) return `${day} ${month}, ${year}`;
+  } catch {
+    // fallback
+  }
   const day = dateObj.getDate();
   const month = dateObj.toLocaleDateString('en-US', { month: 'short' });
   const year = dateObj.getFullYear();
@@ -74,6 +104,20 @@ function formatDateEnglish(dateObj: Date): string {
 }
 
 function formatTime12h(date: Date): string {
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: STUDIO_TIMEZONE,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    })
+      .format(date)
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toUpperCase();
+  } catch {
+    // fallback
+  }
   let hours = date.getHours();
   const minutes = String(date.getMinutes()).padStart(2, '0');
   const ampm = hours >= 12 ? 'PM' : 'AM';
@@ -595,6 +639,73 @@ app.get('/api/reports/csv', (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', `attachment; filename="NANDAN_Studio_${timeframe}_report_${today}.csv"`);
   res.send(csv);
+});
+
+// Studio Chat group messages endpoints
+interface ServerChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderRole: string;
+  isBoss: boolean;
+  text: string;
+  time: string;
+  date: string;
+  dateLabel: string;
+  createdAt: number;
+}
+
+let chatMessagesStore: ServerChatMessage[] = [];
+
+app.get('/api/chat', async (_req: Request, res: Response) => {
+  try {
+    const { data, error } = await supabase
+      .from('studio_settings')
+      .select('value')
+      .eq('key', 'studio_chat_messages_v1')
+      .maybeSingle();
+    if (!error && data?.value) {
+      const parsed = JSON.parse(data.value);
+      if (Array.isArray(parsed)) {
+        chatMessagesStore = parsed;
+        res.json(parsed);
+        return;
+      }
+    }
+  } catch {
+    // fallback to memory
+  }
+  res.json(chatMessagesStore);
+});
+
+app.post('/api/chat', async (req: Request, res: Response) => {
+  const { id, senderId, senderName, senderRole, isBoss, text, time, date, dateLabel, createdAt } = req.body || {};
+  if (!senderId || !text || !String(text).trim()) {
+    res.status(400).json({ error: 'senderId and text are required' });
+    return;
+  }
+
+  const now = new Date();
+  const msg: ServerChatMessage = {
+    id: id ? String(id) : `chat-${now.getTime()}`,
+    senderId: String(senderId),
+    senderName: String(senderName || senderId),
+    senderRole: String(senderRole || 'Employee'),
+    isBoss: Boolean(isBoss),
+    text: String(text).trim(),
+    time: time ? String(time) : formatTime12h(now),
+    date: date ? String(date) : getTodayDateString(now),
+    dateLabel: dateLabel ? String(dateLabel) : formatDateEnglish(now),
+    createdAt: Number(createdAt) || now.getTime()
+  };
+
+  if (!chatMessagesStore.some((m) => m.id === msg.id)) {
+    chatMessagesStore = [...chatMessagesStore, msg]
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .slice(-250);
+  }
+
+  res.status(201).json(msg);
 });
 
 // --- Vite Middleware in Development / Static Files in Production ---

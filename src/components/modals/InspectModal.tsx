@@ -1,6 +1,7 @@
 import React from 'react';
 import { AttendanceLog, AttendanceMetaStore, Deliverable, User, WorkLocationStore } from '../../types.ts';
 import {
+  findActiveOrTodayLog,
   formatSessionLabel,
   getDayAttendanceMeta,
   getTodayDateString,
@@ -27,9 +28,12 @@ export const InspectModal: React.FC<InspectModalProps> = ({
   onClose
 }) => {
   const today = getTodayDateString();
-  const todayLoc = getWorkLocationForDate(workLocations, user.id, today);
-  const todayLog = attendanceLogs.find(a => a.empId === user.id && a.date === today);
-  const todayMeta = getDayAttendanceMeta(attendanceMeta, user.id, today);
+  const todayLog = findActiveOrTodayLog(attendanceLogs, user.id, today);
+  const effectiveDate = todayLog?.date || today;
+  const todayMeta = getDayAttendanceMeta(attendanceMeta, user.id, effectiveDate);
+  const todayLoc =
+    getWorkLocationForDate(workLocations, user.id, effectiveDate, false) ||
+    (todayLog ? (todayMeta?.sessions?.[0]?.location || getWorkLocationForDate(workLocations, user.id, effectiveDate, true)) : null);
   const isTodaySystemLogout = Boolean(todayMeta?.systemLogout && !todayLog?.isCheckedIn);
   const hasCheckedOutToday = Boolean(
     todayLog &&
@@ -174,8 +178,11 @@ export const InspectModal: React.FC<InspectModalProps> = ({
                   </tr>
                 ) : (
                   staffLogs.map((log) => {
-                    const logLoc = getWorkLocationForDate(workLocations, user.id, log.date);
                     const rowMeta = getDayAttendanceMeta(attendanceMeta, user.id, log.date);
+                    const logLoc =
+                      getWorkLocationForDate(workLocations, user.id, log.date, false) ||
+                      rowMeta?.sessions?.[0]?.location ||
+                      (log.date === today ? getWorkLocationForDate(workLocations, user.id, log.date, true) : null);
                     const isSysLogout = Boolean(rowMeta?.systemLogout && !log.isCheckedIn);
 
                     let timeTxt = null;
