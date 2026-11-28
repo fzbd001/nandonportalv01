@@ -47,7 +47,7 @@ export function mergeChatMessages(
     if (m && m.id) byId.set(m.id, m);
   });
   return Array.from(byId.values())
-    .sort((a, b) => a.createdAt - b.createdAt)
+    .sort((a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0))
     .slice(-MAX_CHAT_HISTORY);
 }
 

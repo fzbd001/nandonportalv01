@@ -341,8 +341,28 @@ export default function App() {
           setSavedLogo(latestLogo);
           localStorage.setItem(STORAGE_KEYS.LOGO, latestLogo);
         }
+        const anySuccess = Boolean(
+          latestUsers ||
+          latestAnnouncement ||
+          latestLocations ||
+          latestLogs ||
+          latestMeta ||
+          latestChat ||
+          latestDeliverables
+        );
+        if (anySuccess) {
+          setSupabaseStatus((prev) =>
+            prev.connected && prev.tablesReady
+              ? prev
+              : { connected: true, tablesReady: true, message: 'Connected to Supabase.' }
+          );
+        } else {
+          const status = await checkSupabaseStatus();
+          setSupabaseStatus(status);
+        }
       } catch {
-        // offline fallback
+        const status = await checkSupabaseStatus();
+        setSupabaseStatus(status);
       }
     };
 
@@ -1435,22 +1455,26 @@ export default function App() {
     }));
   };
 
+  const handleRefreshChat = async () => {
+    await refreshSupabaseStatus();
+    try {
+      const remote = await fetchChatMessagesFromSupabase();
+      if (remote) {
+        setChatMessages((prev) => {
+          const merged = mergeChatMessages(prev, remote);
+          markChatAsReadForCurrentUser(merged);
+          return merged;
+        });
+      }
+    } catch {
+      // offline fallback
+    }
+  };
+
   const handleOpenChatModal = () => {
     setIsChatModalOpen(true);
     markChatAsReadForCurrentUser(chatMessages);
-    fetchChatMessagesFromSupabase()
-      .then((remote) => {
-        if (remote) {
-          setChatMessages((prev) => {
-            const merged = mergeChatMessages(prev, remote);
-            markChatAsReadForCurrentUser(merged);
-            return merged;
-          });
-        }
-      })
-      .catch(() => {
-        // offline fallback
-      });
+    handleRefreshChat();
   };
 
   const handleSendChatMessage = (text: string) => {
@@ -1586,6 +1610,24 @@ export default function App() {
             onSaveAnnouncement={handleSaveAnnouncement}
           />
 
+          {!supabaseStatus.connected && (
+            <div className="w-full max-w-7xl mx-auto mb-4 px-4 py-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex items-center justify-between gap-3 flex-wrap text-xs shadow-xs">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <i className="fa-solid fa-wifi text-amber-600 flex-shrink-0"></i>
+                <span className="font-semibold">
+                  Cloud Sync Blocked on This Device ({supabaseStatus.message || 'Cannot reach database'}). Turn off VPN/Proxy Chrome extensions or set DNS to 1.1.1.1 / 8.8.8.8, then retry.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => refreshSupabaseStatus()}
+                className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] flex items-center gap-1.5 flex-shrink-0 cursor-pointer transition-colors"
+              >
+                <i className="fa-solid fa-rotate text-[10px]"></i> Retry Sync
+              </button>
+            </div>
+          )}
+
           <main className="w-full max-w-7xl mx-auto flex flex-col gap-6">
             {currentViewMode === 'staff' ? (
               <StaffView
@@ -1692,6 +1734,8 @@ export default function App() {
           users={users}
           messages={chatMessages}
           onlineUsers={onlineChatUsers}
+          connectionError={!supabaseStatus.connected ? (supabaseStatus.message || 'Cannot reach cloud database') : null}
+          onRefresh={handleRefreshChat}
           onSendMessage={handleSendChatMessage}
           onClose={() => {
             markChatAsReadForCurrentUser(chatMessages);

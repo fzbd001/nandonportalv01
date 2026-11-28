@@ -19,11 +19,15 @@ export const SUPABASE_ANON_KEY =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) ||
   'sb_publishable_mo5Tlfw1anoI0WqL-2wQOA_U2yr6x9c';
 
-const noCacheFetch: typeof fetch = (input, init) => {
-  return globalThis.fetch(input, {
-    ...init,
-    cache: 'no-store'
-  });
+const noCacheFetch: typeof fetch = async (input, init) => {
+  try {
+    return await globalThis.fetch(input, {
+      ...init,
+      cache: 'no-store'
+    });
+  } catch {
+    return globalThis.fetch(input, init);
+  }
 };
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {

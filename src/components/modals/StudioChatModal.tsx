@@ -8,6 +8,8 @@ interface StudioChatModalProps {
   users: User[];
   messages: ChatMessage[];
   onlineUsers: StudioChatPresenceUser[];
+  connectionError?: string | null;
+  onRefresh?: () => Promise<void> | void;
   onSendMessage: (text: string) => void;
   onClose: () => void;
 }
@@ -43,14 +45,27 @@ export const StudioChatModal: React.FC<StudioChatModalProps> = ({
   users,
   messages,
   onlineUsers,
+  connectionError,
+  onRefresh,
   onSendMessage,
   onClose
 }) => {
   const [draft, setDraft] = useState('');
   const [memberQuery, setMemberQuery] = useState('');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const feedEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const handleRefreshClick = async () => {
+    if (!onRefresh || isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 350);
+    }
+  };
 
   // Auto-scroll to latest message on open and new messages
   useEffect(() => {
@@ -329,15 +344,49 @@ export const StudioChatModal: React.FC<StudioChatModalProps> = ({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-9 h-9 rounded-full bg-slate-50 hover:bg-slate-100 text-slate-400 hover:text-slate-700 flex items-center justify-center border border-slate-200/80 transition-colors flex-shrink-0 cursor-pointer"
-              title="Close Studio Chat"
-            >
-              <i className="fa-solid fa-xmark text-sm"></i>
-            </button>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {onRefresh && (
+                <button
+                  type="button"
+                  onClick={handleRefreshClick}
+                  disabled={isRefreshing}
+                  className="h-9 px-3 rounded-full bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-slate-900 flex items-center justify-center gap-1.5 border border-slate-200/80 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-60"
+                  title="Refresh Studio Chat messages"
+                >
+                  <i className={`fa-solid fa-rotate text-[11px] text-rose-500 ${isRefreshing ? 'animate-spin' : ''}`}></i>
+                  <span className="hidden sm:inline">Refresh</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-9 h-9 rounded-full bg-slate-50 hover:bg-slate-100 text-slate-400 hover:text-slate-700 flex items-center justify-center border border-slate-200/80 transition-colors flex-shrink-0 cursor-pointer"
+                title="Close Studio Chat"
+              >
+                <i className="fa-solid fa-xmark text-sm"></i>
+              </button>
+            </div>
           </div>
+
+          {connectionError && (
+            <div className="px-4 sm:px-6 py-2.5 bg-amber-50 border-b border-amber-200/80 flex items-center justify-between gap-3 flex-wrap text-xs text-amber-900">
+              <div className="flex items-center gap-2 min-w-0">
+                <i className="fa-solid fa-triangle-exclamation text-amber-600 flex-shrink-0"></i>
+                <span className="font-semibold">
+                  Cloud sync unreachable on this PC ({connectionError}). Disable VPN/Proxy extensions or switch DNS to 1.1.1.1 / 8.8.8.8.
+                </span>
+              </div>
+              {onRefresh && (
+                <button
+                  type="button"
+                  onClick={handleRefreshClick}
+                  className="px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold flex-shrink-0 cursor-pointer"
+                >
+                  Retry
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Messages Feed */}
           <div className="flex-1 overflow-y-auto px-4 sm:px-7 py-5 bg-[#FAFAFC]">
