@@ -31,18 +31,14 @@ import {
   deleteDeliverableFromSupabase,
   deleteUserFromSupabase,
   fetchAttendanceFromSupabase,
-  fetchAttendanceMetaFromSupabase,
+  fetchBundledStudioSettingsFromSupabase,
   fetchChatMessagesFromSupabase,
   fetchDeliverablesFromSupabase,
-  fetchStudioAnnouncementFromSupabase,
-  fetchStudioLogoFromSupabase,
   fetchUsersFromSupabase,
-  fetchWorkLocationsFromSupabase,
   saveStudioAnnouncementInSupabase,
   saveStudioLogoInSupabase,
   StudioChatPresenceUser,
   subscribeToStudioChatChannel,
-  subscribeToStudioDataChanges,
   supabase,
   SupabaseStatus,
   updateDayAttendanceMetaInSupabase,
@@ -251,170 +247,161 @@ export default function App() {
     message: 'Connecting to Supabase...'
   });
 
-  const refreshSupabaseStatus = async () => {
+  const isSyncingRef = useRef(false);
+  const lastSyncAtRef = useRef(0);
+  const hasSyncedUsersRef = useRef(false);
+  const hasSyncedLogoRef = useRef(false);
+  const retryTimerRef = useRef<number | null>(null);
+
+  const applyBundledSettings = (bundled: Awaited<ReturnType<typeof fetchBundledStudioSettingsFromSupabase>>) => {
+    if (!bundled) return false;
+    if (bundled.logo !== undefined) {
+      hasSyncedLogoRef.current = true;
+      if (bundled.logo !== null) {
+        setSavedLogo(bundled.logo);
+        safeSetStorage(STORAGE_KEYS.LOGO, bundled.logo);
+      }
+    }
+    if (bundled.announcement) {
+      setAnnouncement(bundled.announcement);
+      safeSetStorage(STORAGE_KEYS.ANNOUNCEMENT, bundled.announcement);
+    }
+    if (bundled.workLocations) {
+      setWorkLocations(bundled.workLocations);
+      safeSetStorage(STORAGE_KEYS.WORK_LOCATIONS, JSON.stringify(bundled.workLocations));
+    }
+    if (bundled.attendanceMeta) {
+      setAttendanceMeta(bundled.attendanceMeta);
+      safeSetStorage(STORAGE_KEYS.ATTENDANCE_META, JSON.stringify(bundled.attendanceMeta));
+    }
+    if (bundled.chatMessages) {
+      setChatMessages((prev) => mergeChatMessages(prev, bundled.chatMessages!));
+    }
+    return true;
+  };
+
+  // Sequential, connection-pool-friendly cloud sync (max 1 active DB query per browser tab at a time)
+  const runCloudSync = async (fullSync = false) => {
+    if (isSyncingRef.current) return;
+    isSyncingRef.current = true;
+    lastSyncAtRef.current = Date.now();
+
     try {
-      const status = await checkSupabaseStatus();
-      setSupabaseStatus(status);
-      if (status.tablesReady) {
-        const [dbUsers, dbLogs, dbDeliv, dbLogo, dbAnnouncement, dbWorkLocations, dbAttendanceMeta, dbChatMessages] = await Promise.all([
-          fetchUsersFromSupabase(),
-          fetchAttendanceFromSupabase(),
-          fetchDeliverablesFromSupabase(),
-          fetchStudioLogoFromSupabase(),
-          fetchStudioAnnouncementFromSupabase(),
-          fetchWorkLocationsFromSupabase(),
-          fetchAttendanceMetaFromSupabase(),
-          fetchChatMessagesFromSupabase()
-        ]);
-        if (dbUsers && dbUsers.length > 0) setUsers(dbUsers);
-        if (dbLogs && dbLogs.length > 0) setAttendanceLogs(dbLogs);
-        if (dbDeliv && dbDeliv.length > 0) setDeliverables(dbDeliv);
-        if (dbLogo !== null) setSavedLogo(dbLogo);
-        if (dbAnnouncement) {
-          setAnnouncement(dbAnnouncement);
-          safeSetStorage(STORAGE_KEYS.ANNOUNCEMENT, dbAnnouncement);
+      let anySuccess = false;
+      const shouldFetchUsers = fullSync || !hasSyncedUsersRef.current;
+      const shouldFetchLogo = fullSync || !hasSyncedLogoRef.current;
+
+      if (shouldFetchUsers) {
+        const dbUsers = await fetchUsersFromSupabase();
+        if (dbUsers && dbUsers.length > 0) {
+          setUsers(dbUsers);
+          hasSyncedUsersRef.current = true;
+          anySuccess = true;
         }
-        if (dbWorkLocations) {
-          setWorkLocations(dbWorkLocations);
-          safeSetStorage(STORAGE_KEYS.WORK_LOCATIONS, JSON.stringify(dbWorkLocations));
+      }
+
+      const dbLogs = await fetchAttendanceFromSupabase();
+      if (dbLogs && dbLogs.length > 0) {
+        setAttendanceLogs(dbLogs);
+        anySuccess = true;
+      }
+
+      const dbDeliv = await fetchDeliverablesFromSupabase();
+      if (dbDeliv && dbDeliv.length > 0) {
+        setDeliverables(dbDeliv);
+        anySuccess = true;
+      }
+
+      const bundled = await fetchBundledStudioSettingsFromSupabase(shouldFetchLogo);
+      if (applyBundledSettings(bundled)) {
+        anySuccess = true;
+      }
+
+      if (anySuccess) {
+        if (retryTimerRef.current !== null) {
+          window.clearTimeout(retryTimerRef.current);
+          retryTimerRef.current = null;
         }
-        if (dbAttendanceMeta) {
-          setAttendanceMeta(dbAttendanceMeta);
-          safeSetStorage(STORAGE_KEYS.ATTENDANCE_META, JSON.stringify(dbAttendanceMeta));
-        }
-        if (dbChatMessages) {
-          setChatMessages((prev) => mergeChatMessages(prev, dbChatMessages));
+        setSupabaseStatus((prev) =>
+          prev.connected && prev.tablesReady
+            ? prev
+            : { connected: true, tablesReady: true, message: 'Connected to Supabase.' }
+        );
+      } else {
+        const status = await checkSupabaseStatus();
+        setSupabaseStatus(status);
+        // Auto-retry in 10s if Supabase is still waking up / restarting
+        if (!status.connected && retryTimerRef.current === null) {
+          retryTimerRef.current = window.setTimeout(() => {
+            retryTimerRef.current = null;
+            runCloudSync(true);
+          }, 10000);
         }
       }
     } catch {
-      // offline fallback
+      const status = await checkSupabaseStatus();
+      setSupabaseStatus(status);
+    } finally {
+      isSyncingRef.current = false;
     }
   };
 
+  const refreshSupabaseStatus = async () => {
+    await runCloudSync(true);
+  };
+
   const handleForceSync = async () => {
-    // Clear bulky/stale cached data while preserving login session, then pull fresh cloud data
-    [
-      STORAGE_KEYS.ATTENDANCE,
-      STORAGE_KEYS.DELIVERABLES,
-      STORAGE_KEYS.WORK_LOCATIONS,
-      STORAGE_KEYS.ATTENDANCE_META,
-      STORAGE_KEYS.CHAT_MESSAGES,
-      STORAGE_KEYS.ANNOUNCEMENT,
-      STORAGE_KEYS.LOGO
-    ].forEach((k) => safeRemoveStorage(k));
-    await refreshSupabaseStatus();
+    // Pull fresh cloud data without wiping existing local cache first
+    await runCloudSync(true);
     playChime();
   };
 
   useEffect(() => {
-    refreshSupabaseStatus();
-
-    const syncLiveUpdates = async () => {
-      try {
-        const [
-          latestUsers,
-          latestAnnouncement,
-          latestLocations,
-          latestLogs,
-          latestMeta,
-          latestChat,
-          latestDeliverables,
-          latestLogo
-        ] = await Promise.all([
-          fetchUsersFromSupabase(),
-          fetchStudioAnnouncementFromSupabase(),
-          fetchWorkLocationsFromSupabase(),
-          fetchAttendanceFromSupabase(),
-          fetchAttendanceMetaFromSupabase(),
-          fetchChatMessagesFromSupabase(),
-          fetchDeliverablesFromSupabase(),
-          fetchStudioLogoFromSupabase()
-        ]);
-        if (latestUsers && latestUsers.length > 0) {
-          setUsers(latestUsers);
-        }
-        if (latestAnnouncement) {
-          setAnnouncement(latestAnnouncement);
-          safeSetStorage(STORAGE_KEYS.ANNOUNCEMENT, latestAnnouncement);
-        }
-        if (latestLocations) {
-          setWorkLocations(latestLocations);
-          safeSetStorage(STORAGE_KEYS.WORK_LOCATIONS, JSON.stringify(latestLocations));
-        }
-        if (latestLogs && latestLogs.length > 0) {
-          setAttendanceLogs(latestLogs);
-        }
-        if (latestMeta) {
-          setAttendanceMeta(latestMeta);
-          safeSetStorage(STORAGE_KEYS.ATTENDANCE_META, JSON.stringify(latestMeta));
-        }
-        if (latestChat) {
-          setChatMessages((prev) => mergeChatMessages(prev, latestChat));
-        }
-        if (latestDeliverables && latestDeliverables.length > 0) {
-          setDeliverables(latestDeliverables);
-        }
-        if (latestLogo !== null) {
-          setSavedLogo(latestLogo);
-          safeSetStorage(STORAGE_KEYS.LOGO, latestLogo);
-        }
-        const anySuccess = Boolean(
-          latestUsers ||
-          latestAnnouncement ||
-          latestLocations ||
-          latestLogs ||
-          latestMeta ||
-          latestChat ||
-          latestDeliverables
-        );
-        if (anySuccess) {
-          setSupabaseStatus((prev) =>
-            prev.connected && prev.tablesReady
-              ? prev
-              : { connected: true, tablesReady: true, message: 'Connected to Supabase.' }
-          );
-        } else {
-          const status = await checkSupabaseStatus();
-          setSupabaseStatus(status);
-        }
-      } catch {
-        const status = await checkSupabaseStatus();
-        setSupabaseStatus(status);
-      }
-    };
+    runCloudSync(true);
 
     const checkDateRollover = () => {
       const latestDate = getTodayDateString();
       setCurrentDateStr((prev) => (prev === latestDate ? prev : latestDate));
     };
 
-    const liveDataChannel = subscribeToStudioDataChanges(() => {
+    const syncIfNeeded = (minCooldownMs = 8000) => {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - lastSyncAtRef.current < minCooldownMs) return;
       checkDateRollover();
-      syncLiveUpdates();
-    });
+      runCloudSync(false);
+    };
 
+    // 45s + small per-tab jitter so all studio PCs never hit the DB pool at the exact same second
+    const jitterMs = Math.floor(Math.random() * 5000);
     const interval = setInterval(() => {
       checkDateRollover();
-      syncLiveUpdates();
-    }, 10000);
-    const onFocusSync = () => {
+      if (document.visibilityState === 'visible') {
+        runCloudSync(false);
+      }
+    }, 45000 + jitterMs);
+
+    const onFocusSync = () => syncIfNeeded(8000);
+    const onOnlineSync = () => {
       checkDateRollover();
-      syncLiveUpdates();
+      runCloudSync(true);
     };
     const onVisibilitySync = () => {
       if (document.visibilityState === 'visible') {
-        checkDateRollover();
-        syncLiveUpdates();
+        syncIfNeeded(8000);
       }
     };
+
     window.addEventListener('focus', onFocusSync);
-    window.addEventListener('online', onFocusSync);
+    window.addEventListener('online', onOnlineSync);
     document.addEventListener('visibilitychange', onVisibilitySync);
     return () => {
       clearInterval(interval);
-      supabase.removeChannel(liveDataChannel);
+      if (retryTimerRef.current !== null) {
+        window.clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
       window.removeEventListener('focus', onFocusSync);
-      window.removeEventListener('online', onFocusSync);
+      window.removeEventListener('online', onOnlineSync);
       document.removeEventListener('visibilitychange', onVisibilitySync);
     };
   }, []);
@@ -1473,7 +1460,6 @@ export default function App() {
   };
 
   const handleRefreshChat = async () => {
-    await refreshSupabaseStatus();
     try {
       const remote = await fetchChatMessagesFromSupabase();
       if (remote) {
@@ -1482,9 +1468,16 @@ export default function App() {
           markChatAsReadForCurrentUser(merged);
           return merged;
         });
+        setSupabaseStatus((prev) =>
+          prev.connected && prev.tablesReady
+            ? prev
+            : { connected: true, tablesReady: true, message: 'Connected to Supabase.' }
+        );
+      } else {
+        await runCloudSync(false);
       }
     } catch {
-      // offline fallback
+      await runCloudSync(false);
     }
   };
 
@@ -1631,9 +1624,9 @@ export default function App() {
           {!supabaseStatus.connected && (
             <div className="w-full max-w-7xl mx-auto mb-4 px-4 py-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex items-center justify-between gap-3 flex-wrap text-xs shadow-xs">
               <div className="flex items-center gap-2.5 min-w-0">
-                <i className="fa-solid fa-wifi text-amber-600 flex-shrink-0"></i>
+                <i className="fa-solid fa-database text-amber-600 flex-shrink-0"></i>
                 <span className="font-semibold">
-                  Cloud Sync Blocked on This Device ({supabaseStatus.message || 'Cannot reach database'}). Turn off VPN/Proxy Chrome extensions or set DNS to 1.1.1.1 / 8.8.8.8, then retry.
+                  Cloud Sync Busy ({supabaseStatus.message || 'Database temporarily busy'}). Click Retry Sync in a few seconds.
                 </span>
               </div>
               <button

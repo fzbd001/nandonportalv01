@@ -137,7 +137,7 @@ export async function fetchAttendanceFromSupabase(): Promise<AttendanceLog[] | n
       .order('date', { ascending: false })
       .limit(2000);
     if (error) {
-      const fallback = await supabase.from('attendance_logs').select('*');
+      const fallback = await supabase.from('attendance_logs').select('*').limit(2000);
       data = fallback.data;
       error = fallback.error;
     }
@@ -193,7 +193,7 @@ export async function fetchDeliverablesFromSupabase(): Promise<Deliverable[] | n
       .order('created_at', { ascending: false })
       .limit(2000);
     if (error) {
-      const fallback = await supabase.from('deliverables').select('*');
+      const fallback = await supabase.from('deliverables').select('*').limit(2000);
       data = fallback.data;
       error = fallback.error;
     }
@@ -364,7 +364,28 @@ export async function upsertEmployeeWorkLocationInSupabase(
   location: WorkLocation,
   fallbackStore?: WorkLocationStore
 ): Promise<WorkLocationStore> {
-  const remote = await fetchWorkLocationsFromSupabase();
+  let remote: WorkLocationStore | null = null;
+  let readFailed = false;
+  try {
+    const { data, error } = await supabase
+      .from('studio_settings')
+      .select('value')
+      .eq('key', 'work_locations_v1')
+      .maybeSingle();
+    if (error) {
+      readFailed = true;
+    } else if (data?.value) {
+      const parsed = JSON.parse(data.value);
+      if (parsed && typeof parsed === 'object') {
+        remote = {
+          latestByEmp: parsed.latestByEmp && typeof parsed.latestByEmp === 'object' ? parsed.latestByEmp : {},
+          byDate: parsed.byDate && typeof parsed.byDate === 'object' ? parsed.byDate : {}
+        };
+      }
+    }
+  } catch {
+    readFailed = true;
+  }
   const base: WorkLocationStore = remote || fallbackStore || { latestByEmp: {}, byDate: {} };
   const next: WorkLocationStore = {
     latestByEmp: {
@@ -376,7 +397,9 @@ export async function upsertEmployeeWorkLocationInSupabase(
       [`${empId}__${date}`]: location
     }
   };
-  await saveWorkLocationsInSupabase(next);
+  if (!readFailed) {
+    await saveWorkLocationsInSupabase(next);
+  }
   return next;
 }
 
@@ -427,7 +450,25 @@ export async function updateDayAttendanceMetaInSupabase(
   fallbackStore?: AttendanceMetaStore
 ): Promise<AttendanceMetaStore> {
   const key = `${empId}__${date}`;
-  const remote = await fetchAttendanceMetaFromSupabase();
+  let remote: AttendanceMetaStore | null = null;
+  let readFailed = false;
+  try {
+    const { data, error } = await supabase
+      .from('studio_settings')
+      .select('value')
+      .eq('key', 'attendance_meta_v1')
+      .maybeSingle();
+    if (error) {
+      readFailed = true;
+    } else if (data?.value) {
+      const parsed = JSON.parse(data.value);
+      if (parsed && typeof parsed === 'object' && parsed.byKey && typeof parsed.byKey === 'object') {
+        remote = { byKey: parsed.byKey };
+      }
+    }
+  } catch {
+    readFailed = true;
+  }
   const base: AttendanceMetaStore = remote || fallbackStore || { byKey: {} };
   const existing: DayAttendanceMeta = base.byKey[key] || { sessions: [] };
   const updatedDay = updater(existing);
@@ -437,7 +478,9 @@ export async function updateDayAttendanceMetaInSupabase(
       [key]: updatedDay
     }
   };
-  await saveAttendanceMetaInSupabase(next);
+  if (!readFailed) {
+    await saveAttendanceMetaInSupabase(next);
+  }
   return next;
 }
 
@@ -471,19 +514,132 @@ export async function appendChatMessageInSupabase(
   newMessage: ChatMessage,
   fallbackMessages: ChatMessage[] = []
 ): Promise<ChatMessage[]> {
-  const remote = await fetchChatMessagesFromSupabase();
+  let remote: ChatMessage[] | null = null;
+  let readFailed = false;
+  try {
+    const { data, error } = await supabase
+      .from('studio_settings')
+      .select('value')
+      .eq('key', STUDIO_CHAT_SETTINGS_KEY)
+      .maybeSingle();
+    if (error) {
+      readFailed = true;
+    } else if (data?.value) {
+      const parsed = JSON.parse(data.value);
+      if (Array.isArray(parsed)) {
+        remote = mergeChatMessages([], parsed);
+      }
+    }
+  } catch {
+    readFailed = true;
+  }
   const base = remote || fallbackMessages;
   const merged = mergeChatMessages(base, [newMessage]);
-  try {
-    await supabase.from('studio_settings').upsert({
-      key: STUDIO_CHAT_SETTINGS_KEY,
-      value: JSON.stringify(merged),
-      updated_at: new Date().toISOString()
-    });
-  } catch {
-    // offline fallback
+  if (!readFailed) {
+    try {
+      await supabase.from('studio_settings').upsert({
+        key: STUDIO_CHAT_SETTINGS_KEY,
+        value: JSON.stringify(merged),
+        updated_at: new Date().toISOString()
+      });
+    } catch {
+      // offline fallback
+    }
   }
   return merged;
+}
+
+export interface BundledStudioSettings {
+  announcement: string | null;
+  workLocations: WorkLocationStore | null;
+  attendanceMeta: AttendanceMetaStore | null;
+  chatMessages: ChatMessage[] | null;
+  logo?: string | null;
+}
+
+/**
+ * Fetch announcement, work locations, attendance meta, and Studio Chat in ONE single DB query
+ * (avoids opening 4–5 parallel Postgres pool connections per client tab).
+ */
+export async function fetchBundledStudioSettingsFromSupabase(
+  includeLogo = false
+): Promise<BundledStudioSettings | null> {
+  try {
+    const keys = [
+      'studio_announcement',
+      'work_locations_v1',
+      'attendance_meta_v1',
+      STUDIO_CHAT_SETTINGS_KEY
+    ];
+    if (includeLogo) {
+      keys.push('studio_logo');
+    }
+    const { data, error } = await supabase
+      .from('studio_settings')
+      .select('key, value')
+      .in('key', keys);
+
+    if (error || !data) return null;
+
+    const map = new Map<string, string>();
+    data.forEach((row: any) => {
+      if (row && typeof row.key === 'string' && typeof row.value === 'string') {
+        map.set(row.key, row.value);
+      }
+    });
+
+    let workLocations: WorkLocationStore | null = null;
+    const rawLoc = map.get('work_locations_v1');
+    if (rawLoc) {
+      try {
+        const parsed = JSON.parse(rawLoc);
+        if (parsed && typeof parsed === 'object') {
+          workLocations = {
+            latestByEmp: parsed.latestByEmp && typeof parsed.latestByEmp === 'object' ? parsed.latestByEmp : {},
+            byDate: parsed.byDate && typeof parsed.byDate === 'object' ? parsed.byDate : {}
+          };
+        }
+      } catch {
+        // ignore malformed json
+      }
+    }
+
+    let attendanceMeta: AttendanceMetaStore | null = null;
+    const rawMeta = map.get('attendance_meta_v1');
+    if (rawMeta) {
+      try {
+        const parsed = JSON.parse(rawMeta);
+        if (parsed && typeof parsed === 'object' && parsed.byKey && typeof parsed.byKey === 'object') {
+          attendanceMeta = { byKey: parsed.byKey };
+        }
+      } catch {
+        // ignore malformed json
+      }
+    }
+
+    let chatMessages: ChatMessage[] | null = null;
+    const rawChat = map.get(STUDIO_CHAT_SETTINGS_KEY);
+    if (rawChat) {
+      try {
+        const parsed = JSON.parse(rawChat);
+        if (Array.isArray(parsed)) {
+          chatMessages = mergeChatMessages([], parsed);
+        }
+      } catch {
+        // ignore malformed json
+      }
+    }
+
+    return {
+      announcement: map.get('studio_announcement') ?? null,
+      workLocations,
+      attendanceMeta,
+      chatMessages,
+      logo: includeLogo ? (map.get('studio_logo') ?? null) : undefined
+    };
+  } catch {
+    return null;
+  }
 }
 
 export interface StudioChatPresenceUser {
@@ -494,12 +650,12 @@ export interface StudioChatPresenceUser {
 }
 
 /**
- * Subscribe to the live Studio Chat Realtime WebSocket channel (Broadcast + Presence + DB changes)
+ * Subscribe to the live Studio Chat Realtime WebSocket channel (Broadcast + Presence — zero Postgres pool usage)
  */
 export function subscribeToStudioChatChannel(
   currentUser: StudioChatPresenceUser,
   onIncomingMessage: (msg: ChatMessage) => void,
-  onRemoteHistoryUpdate: (messages: ChatMessage[]) => void,
+  _onRemoteHistoryUpdate: (messages: ChatMessage[]) => void,
   onOnlineUsersChange: (users: StudioChatPresenceUser[]) => void
 ): RealtimeChannel {
   const channel = supabase.channel('nandan-studio-chat-room', {
@@ -515,28 +671,6 @@ export function subscribeToStudioChatChannel(
         onIncomingMessage(payload as ChatMessage);
       }
     })
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'studio_settings',
-        filter: `key=eq.${STUDIO_CHAT_SETTINGS_KEY}`
-      },
-      (payload: any) => {
-        try {
-          const rawVal = payload?.new?.value;
-          if (rawVal) {
-            const parsed = JSON.parse(rawVal);
-            if (Array.isArray(parsed)) {
-              onRemoteHistoryUpdate(mergeChatMessages([], parsed));
-            }
-          }
-        } catch {
-          // ignore parse error
-        }
-      }
-    )
     .on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState<StudioChatPresenceUser>();
       const onlineMap = new Map<string, StudioChatPresenceUser>();
@@ -572,27 +706,5 @@ export function subscribeToStudioChatChannel(
   return channel;
 }
 
-/**
- * Subscribe to live Postgres changes across core portal tables so updates sync immediately on all devices
- */
-export function subscribeToStudioDataChanges(onChange: () => void): RealtimeChannel {
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  const triggerSync = () => {
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      onChange();
-    }, 350);
-  };
-
-  const channel = supabase
-    .channel('nandan-studio-live-data')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_logs' }, triggerSync)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'deliverables' }, triggerSync)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, triggerSync)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'studio_settings' }, triggerSync)
-    .subscribe();
-
-  return channel;
-}
 
 

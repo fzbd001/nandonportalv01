@@ -373,7 +373,7 @@ export const StudioChatModal: React.FC<StudioChatModalProps> = ({
               <div className="flex items-center gap-2 min-w-0">
                 <i className="fa-solid fa-triangle-exclamation text-amber-600 flex-shrink-0"></i>
                 <span className="font-semibold">
-                  Cloud sync unreachable on this PC ({connectionError}). Disable VPN/Proxy extensions or switch DNS to 1.1.1.1 / 8.8.8.8.
+                  Cloud database temporarily busy ({connectionError}). Click Retry to load latest messages.
                 </span>
               </div>
               {onRefresh && (
