@@ -19,7 +19,18 @@ export const SUPABASE_ANON_KEY =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY) ||
   'sb_publishable_mo5Tlfw1anoI0WqL-2wQOA_U2yr6x9c';
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const noCacheFetch: typeof fetch = (input, init) => {
+  return globalThis.fetch(input, {
+    ...init,
+    cache: 'no-store'
+  });
+};
+
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  global: {
+    fetch: noCacheFetch
+  }
+});
 
 export interface SupabaseStatus {
   connected: boolean;
@@ -116,7 +127,11 @@ export async function deleteUserFromSupabase(userId: string): Promise<boolean> {
  */
 export async function fetchAttendanceFromSupabase(): Promise<AttendanceLog[] | null> {
   try {
-    const { data, error } = await supabase.from('attendance_logs').select('*');
+    const { data, error } = await supabase
+      .from('attendance_logs')
+      .select('*')
+      .order('date', { ascending: false })
+      .limit(2000);
     if (error || !data) return null;
     return data.map((item: any) => ({
       id: item.id,
@@ -163,7 +178,11 @@ export async function upsertAttendanceInSupabase(log: AttendanceLog): Promise<bo
  */
 export async function fetchDeliverablesFromSupabase(): Promise<Deliverable[] | null> {
   try {
-    const { data, error } = await supabase.from('deliverables').select('*').order('created_at', { ascending: false });
+    const { data, error } = await supabase
+      .from('deliverables')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(2000);
     if (error || !data) return null;
     return data.map((item: any) => ({
       id: item.id,
@@ -538,4 +557,28 @@ export function subscribeToStudioChatChannel(
 
   return channel;
 }
+
+/**
+ * Subscribe to live Postgres changes across core portal tables so updates sync immediately on all devices
+ */
+export function subscribeToStudioDataChanges(onChange: () => void): RealtimeChannel {
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  const triggerSync = () => {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      onChange();
+    }, 350);
+  };
+
+  const channel = supabase
+    .channel('nandan-studio-live-data')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_logs' }, triggerSync)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'deliverables' }, triggerSync)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, triggerSync)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'studio_settings' }, triggerSync)
+    .subscribe();
+
+  return channel;
+}
+
 

@@ -42,6 +42,7 @@ import {
   saveStudioLogoInSupabase,
   StudioChatPresenceUser,
   subscribeToStudioChatChannel,
+  subscribeToStudioDataChanges,
   supabase,
   SupabaseStatus,
   updateDayAttendanceMetaInSupabase,
@@ -292,34 +293,56 @@ export default function App() {
     refreshSupabaseStatus();
 
     const syncLiveUpdates = async () => {
-      const [latestAnnouncement, latestLocations, latestLogs, latestMeta, latestChat, latestDeliverables] = await Promise.all([
-        fetchStudioAnnouncementFromSupabase(),
-        fetchWorkLocationsFromSupabase(),
-        fetchAttendanceFromSupabase(),
-        fetchAttendanceMetaFromSupabase(),
-        fetchChatMessagesFromSupabase(),
-        fetchDeliverablesFromSupabase()
-      ]);
-      if (latestAnnouncement) {
-        setAnnouncement(latestAnnouncement);
-        localStorage.setItem(STORAGE_KEYS.ANNOUNCEMENT, latestAnnouncement);
-      }
-      if (latestLocations) {
-        setWorkLocations(latestLocations);
-        localStorage.setItem(STORAGE_KEYS.WORK_LOCATIONS, JSON.stringify(latestLocations));
-      }
-      if (latestLogs && latestLogs.length > 0) {
-        setAttendanceLogs(latestLogs);
-      }
-      if (latestMeta) {
-        setAttendanceMeta(latestMeta);
-        localStorage.setItem(STORAGE_KEYS.ATTENDANCE_META, JSON.stringify(latestMeta));
-      }
-      if (latestChat) {
-        setChatMessages((prev) => mergeChatMessages(prev, latestChat));
-      }
-      if (latestDeliverables && latestDeliverables.length > 0) {
-        setDeliverables(latestDeliverables);
+      try {
+        const [
+          latestUsers,
+          latestAnnouncement,
+          latestLocations,
+          latestLogs,
+          latestMeta,
+          latestChat,
+          latestDeliverables,
+          latestLogo
+        ] = await Promise.all([
+          fetchUsersFromSupabase(),
+          fetchStudioAnnouncementFromSupabase(),
+          fetchWorkLocationsFromSupabase(),
+          fetchAttendanceFromSupabase(),
+          fetchAttendanceMetaFromSupabase(),
+          fetchChatMessagesFromSupabase(),
+          fetchDeliverablesFromSupabase(),
+          fetchStudioLogoFromSupabase()
+        ]);
+        if (latestUsers && latestUsers.length > 0) {
+          setUsers(latestUsers);
+        }
+        if (latestAnnouncement) {
+          setAnnouncement(latestAnnouncement);
+          localStorage.setItem(STORAGE_KEYS.ANNOUNCEMENT, latestAnnouncement);
+        }
+        if (latestLocations) {
+          setWorkLocations(latestLocations);
+          localStorage.setItem(STORAGE_KEYS.WORK_LOCATIONS, JSON.stringify(latestLocations));
+        }
+        if (latestLogs && latestLogs.length > 0) {
+          setAttendanceLogs(latestLogs);
+        }
+        if (latestMeta) {
+          setAttendanceMeta(latestMeta);
+          localStorage.setItem(STORAGE_KEYS.ATTENDANCE_META, JSON.stringify(latestMeta));
+        }
+        if (latestChat) {
+          setChatMessages((prev) => mergeChatMessages(prev, latestChat));
+        }
+        if (latestDeliverables && latestDeliverables.length > 0) {
+          setDeliverables(latestDeliverables);
+        }
+        if (latestLogo !== null) {
+          setSavedLogo(latestLogo);
+          localStorage.setItem(STORAGE_KEYS.LOGO, latestLogo);
+        }
+      } catch {
+        // offline fallback
       }
     };
 
@@ -327,6 +350,11 @@ export default function App() {
       const latestDate = getTodayDateString();
       setCurrentDateStr((prev) => (prev === latestDate ? prev : latestDate));
     };
+
+    const liveDataChannel = subscribeToStudioDataChanges(() => {
+      checkDateRollover();
+      syncLiveUpdates();
+    });
 
     const interval = setInterval(() => {
       checkDateRollover();
@@ -336,10 +364,21 @@ export default function App() {
       checkDateRollover();
       syncLiveUpdates();
     };
+    const onVisibilitySync = () => {
+      if (document.visibilityState === 'visible') {
+        checkDateRollover();
+        syncLiveUpdates();
+      }
+    };
     window.addEventListener('focus', onFocusSync);
+    window.addEventListener('online', onFocusSync);
+    document.addEventListener('visibilitychange', onVisibilitySync);
     return () => {
       clearInterval(interval);
+      supabase.removeChannel(liveDataChannel);
       window.removeEventListener('focus', onFocusSync);
+      window.removeEventListener('online', onFocusSync);
+      document.removeEventListener('visibilitychange', onVisibilitySync);
     };
   }, []);
 
