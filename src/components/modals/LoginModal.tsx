@@ -40,11 +40,11 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           onClick={onOpenLogoModal}
           title="Click to upload/change Logo"
         >
-          {savedLogo ? (
-            <img src={savedLogo} alt="NANDAN" className="w-full h-full object-cover rounded-[22%]" />
-          ) : (
-            <span className="text-white font-extrabold text-xs tracking-wider select-none">NANDAN</span>
-          )}
+          <img
+            src={savedLogo || './favicon.png'}
+            alt="NANDAN"
+            className="w-full h-full object-cover rounded-[22%]"
+          />
         </div>
         <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">NANDAN STUDIO</h2>
         <p className="text-xs text-slate-500 font-semibold mb-5">

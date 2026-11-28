@@ -292,9 +292,10 @@ export function generateAndPrintPDFReport(
     targetUsers = targetUsers.filter(u => u.id === filterMember);
   }
 
-  const logoHtml = savedLogo
-    ? `<img src="${savedLogo}" style="width:48px; height:48px; border-radius:10px; object-fit:cover;">`
-    : `<div style="width:48px; height:48px; border-radius:10px; background:#e11d48; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:11px;">NANDAN</div>`;
+  const defaultLogoUrl =
+    typeof window !== 'undefined' ? new URL('./favicon.png', window.location.href).href : './favicon.png';
+  const resolvedLogo = savedLogo || defaultLogoUrl;
+  const logoHtml = `<img src="${resolvedLogo}" style="width:48px; height:48px; border-radius:10px; object-fit:cover;">`;
 
   const staffCardsHtml = targetUsers.map(staff => {
     const stats = calculateStaffPeriodStats(attendanceLogs, deliverables, staff.id, timeframe, workLocations, attendanceMeta);

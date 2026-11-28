@@ -85,11 +85,11 @@ export const Header: React.FC<HeaderProps> = ({
           onClick={onOpenLogoModal}
           title="Click to update Studio Logo"
         >
-          {savedLogo ? (
-            <img src={savedLogo} alt="NANDAN" className="w-full h-full object-cover rounded-[22%]" />
-          ) : (
-            <span className="text-white font-extrabold text-[10px] tracking-wider select-none">NANDAN</span>
-          )}
+          <img
+            src={savedLogo || './favicon.png'}
+            alt="NANDAN"
+            className="w-full h-full object-cover rounded-[22%]"
+          />
         </div>
         <div>
           <div className="flex items-center gap-2">
