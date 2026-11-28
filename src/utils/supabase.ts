@@ -131,11 +131,16 @@ export async function deleteUserFromSupabase(userId: string): Promise<boolean> {
  */
 export async function fetchAttendanceFromSupabase(): Promise<AttendanceLog[] | null> {
   try {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('attendance_logs')
       .select('*')
       .order('date', { ascending: false })
       .limit(2000);
+    if (error) {
+      const fallback = await supabase.from('attendance_logs').select('*');
+      data = fallback.data;
+      error = fallback.error;
+    }
     if (error || !data) return null;
     return data.map((item: any) => ({
       id: item.id,
@@ -182,11 +187,16 @@ export async function upsertAttendanceInSupabase(log: AttendanceLog): Promise<bo
  */
 export async function fetchDeliverablesFromSupabase(): Promise<Deliverable[] | null> {
   try {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('deliverables')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(2000);
+    if (error) {
+      const fallback = await supabase.from('deliverables').select('*');
+      data = fallback.data;
+      error = fallback.error;
+    }
     if (error || !data) return null;
     return data.map((item: any) => ({
       id: item.id,

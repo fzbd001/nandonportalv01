@@ -12,6 +12,7 @@ interface HeaderProps {
   onOpenRegisterModal: () => void;
   onOpenChatModal: () => void;
   unreadChatCount: number;
+  onForceSync?: () => void;
   onSignOut: () => void;
   notifications: NotificationItem[];
   readNotifIds: string[];
@@ -30,6 +31,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenRegisterModal,
   onOpenChatModal,
   unreadChatCount,
+  onForceSync,
   onSignOut,
   notifications,
   readNotifIds,
@@ -292,6 +294,18 @@ export const Header: React.FC<HeaderProps> = ({
                     className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
                   >
                     <i className="fa-solid fa-id-card-clip text-rose-500 text-sm"></i> Team IDs &amp; Access
+                  </button>
+                )}
+
+                {onForceSync && (
+                  <button
+                    onClick={() => {
+                      setIsProfileOpen(false);
+                      onForceSync();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+                  >
+                    <i className="fa-solid fa-arrows-rotate text-emerald-600 text-sm"></i> Sync Latest Data
                   </button>
                 )}
 

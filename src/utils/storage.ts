@@ -33,6 +33,38 @@ export const STORAGE_KEYS = {
   CHAT_LAST_READ: 'nandan_studio_chat_last_read_v6',
 };
 
+export function safeSetStorage(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // QuotaExceededError or private-mode restriction: purge legacy/bulky cache keys and retry once
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && /^nandan_.*_v[1-5]$/.test(k)) {
+          keysToRemove.push(k);
+        }
+      }
+      keysToRemove.forEach((k) => localStorage.removeItem(k));
+      if (key !== STORAGE_KEYS.LOGO) {
+        localStorage.removeItem(STORAGE_KEYS.LOGO);
+      }
+      localStorage.setItem(key, value);
+    } catch {
+      // Never allow localStorage quota errors to interrupt React state or cloud sync
+    }
+  }
+}
+
+export function safeRemoveStorage(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // ignore storage errors
+  }
+}
+
 export const MAX_CHAT_HISTORY = 250;
 
 export function mergeChatMessages(

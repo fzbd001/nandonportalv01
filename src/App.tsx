@@ -67,6 +67,8 @@ import {
   INITIAL_USERS,
   mergeChatMessages,
   OFFICE_MAX_SHIFT_MINUTES,
+  safeRemoveStorage,
+  safeSetStorage,
   STORAGE_KEYS
 } from './utils/storage.ts';
 import { playChime } from './utils/audio.ts';
@@ -270,15 +272,15 @@ export default function App() {
         if (dbLogo !== null) setSavedLogo(dbLogo);
         if (dbAnnouncement) {
           setAnnouncement(dbAnnouncement);
-          localStorage.setItem(STORAGE_KEYS.ANNOUNCEMENT, dbAnnouncement);
+          safeSetStorage(STORAGE_KEYS.ANNOUNCEMENT, dbAnnouncement);
         }
         if (dbWorkLocations) {
           setWorkLocations(dbWorkLocations);
-          localStorage.setItem(STORAGE_KEYS.WORK_LOCATIONS, JSON.stringify(dbWorkLocations));
+          safeSetStorage(STORAGE_KEYS.WORK_LOCATIONS, JSON.stringify(dbWorkLocations));
         }
         if (dbAttendanceMeta) {
           setAttendanceMeta(dbAttendanceMeta);
-          localStorage.setItem(STORAGE_KEYS.ATTENDANCE_META, JSON.stringify(dbAttendanceMeta));
+          safeSetStorage(STORAGE_KEYS.ATTENDANCE_META, JSON.stringify(dbAttendanceMeta));
         }
         if (dbChatMessages) {
           setChatMessages((prev) => mergeChatMessages(prev, dbChatMessages));
@@ -287,6 +289,21 @@ export default function App() {
     } catch {
       // offline fallback
     }
+  };
+
+  const handleForceSync = async () => {
+    // Clear bulky/stale cached data while preserving login session, then pull fresh cloud data
+    [
+      STORAGE_KEYS.ATTENDANCE,
+      STORAGE_KEYS.DELIVERABLES,
+      STORAGE_KEYS.WORK_LOCATIONS,
+      STORAGE_KEYS.ATTENDANCE_META,
+      STORAGE_KEYS.CHAT_MESSAGES,
+      STORAGE_KEYS.ANNOUNCEMENT,
+      STORAGE_KEYS.LOGO
+    ].forEach((k) => safeRemoveStorage(k));
+    await refreshSupabaseStatus();
+    playChime();
   };
 
   useEffect(() => {
@@ -318,18 +335,18 @@ export default function App() {
         }
         if (latestAnnouncement) {
           setAnnouncement(latestAnnouncement);
-          localStorage.setItem(STORAGE_KEYS.ANNOUNCEMENT, latestAnnouncement);
+          safeSetStorage(STORAGE_KEYS.ANNOUNCEMENT, latestAnnouncement);
         }
         if (latestLocations) {
           setWorkLocations(latestLocations);
-          localStorage.setItem(STORAGE_KEYS.WORK_LOCATIONS, JSON.stringify(latestLocations));
+          safeSetStorage(STORAGE_KEYS.WORK_LOCATIONS, JSON.stringify(latestLocations));
         }
         if (latestLogs && latestLogs.length > 0) {
           setAttendanceLogs(latestLogs);
         }
         if (latestMeta) {
           setAttendanceMeta(latestMeta);
-          localStorage.setItem(STORAGE_KEYS.ATTENDANCE_META, JSON.stringify(latestMeta));
+          safeSetStorage(STORAGE_KEYS.ATTENDANCE_META, JSON.stringify(latestMeta));
         }
         if (latestChat) {
           setChatMessages((prev) => mergeChatMessages(prev, latestChat));
@@ -339,7 +356,7 @@ export default function App() {
         }
         if (latestLogo !== null) {
           setSavedLogo(latestLogo);
-          localStorage.setItem(STORAGE_KEYS.LOGO, latestLogo);
+          safeSetStorage(STORAGE_KEYS.LOGO, latestLogo);
         }
         const anySuccess = Boolean(
           latestUsers ||
@@ -402,50 +419,50 @@ export default function App() {
     };
   }, []);
 
-  // Sync to localStorage
+  // Sync to localStorage (quota-safe so full storage never breaks live updates)
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+    safeSetStorage(STORAGE_KEYS.USERS, JSON.stringify(users));
   }, [users]);
 
   useEffect(() => {
     if (currentUser) {
-      localStorage.setItem(STORAGE_KEYS.ACTIVE_USER, JSON.stringify(currentUser));
+      safeSetStorage(STORAGE_KEYS.ACTIVE_USER, JSON.stringify(currentUser));
       if (currentUser.isBoss) {
         setCurrentViewMode('boss');
       } else {
         setCurrentViewMode('staff');
       }
     } else {
-      localStorage.removeItem(STORAGE_KEYS.ACTIVE_USER);
+      safeRemoveStorage(STORAGE_KEYS.ACTIVE_USER);
     }
   }, [currentUser]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(attendanceLogs));
+    safeSetStorage(STORAGE_KEYS.ATTENDANCE, JSON.stringify(attendanceLogs));
   }, [attendanceLogs]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.DELIVERABLES, JSON.stringify(deliverables));
+    safeSetStorage(STORAGE_KEYS.DELIVERABLES, JSON.stringify(deliverables));
   }, [deliverables]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.READ_NOTIFS, JSON.stringify(readNotifIds));
+    safeSetStorage(STORAGE_KEYS.READ_NOTIFS, JSON.stringify(readNotifIds));
   }, [readNotifIds]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.WORK_LOCATIONS, JSON.stringify(workLocations));
+    safeSetStorage(STORAGE_KEYS.WORK_LOCATIONS, JSON.stringify(workLocations));
   }, [workLocations]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.ATTENDANCE_META, JSON.stringify(attendanceMeta));
+    safeSetStorage(STORAGE_KEYS.ATTENDANCE_META, JSON.stringify(attendanceMeta));
   }, [attendanceMeta]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.CHAT_MESSAGES, JSON.stringify(chatMessages));
+    safeSetStorage(STORAGE_KEYS.CHAT_MESSAGES, JSON.stringify(chatMessages));
   }, [chatMessages]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.CHAT_LAST_READ, JSON.stringify(chatLastReadByUser));
+    safeSetStorage(STORAGE_KEYS.CHAT_LAST_READ, JSON.stringify(chatLastReadByUser));
   }, [chatLastReadByUser]);
 
   // Real-time WebSocket subscription for Studio Chat (Broadcast + Presence + DB changes)
@@ -625,7 +642,7 @@ export default function App() {
           'System Logout: Your 9-hour Office shift limit was reached, so the system automatically checked you out and logged you out. Boss permission is required to check in again today.'
         );
         setActiveSessionLocation(null);
-        localStorage.removeItem(STORAGE_KEYS.ACTIVE_SESSION_LOCATION);
+        safeRemoveStorage(STORAGE_KEYS.ACTIVE_SESSION_LOCATION);
         setCurrentUser(null);
       }
     };
@@ -1282,7 +1299,7 @@ export default function App() {
       };
       setWorkLocations(nextStore);
       setActiveSessionLocation(workLocation);
-      localStorage.setItem(STORAGE_KEYS.ACTIVE_SESSION_LOCATION, workLocation);
+      safeSetStorage(STORAGE_KEYS.ACTIVE_SESSION_LOCATION, workLocation);
       upsertEmployeeWorkLocationInSupabase(user.id, today, loginTime, workLocation, nextStore)
         .then((merged) => setWorkLocations(merged))
         .catch(() => {
@@ -1298,7 +1315,7 @@ export default function App() {
 
   const handleSignOut = () => {
     setActiveSessionLocation(null);
-    localStorage.removeItem(STORAGE_KEYS.ACTIVE_SESSION_LOCATION);
+    safeRemoveStorage(STORAGE_KEYS.ACTIVE_SESSION_LOCATION);
     setCurrentUser(null);
   };
 
@@ -1380,20 +1397,20 @@ export default function App() {
   // Logo handlers
   const handleSaveLogo = (logo: string) => {
     setSavedLogo(logo);
-    localStorage.setItem(STORAGE_KEYS.LOGO, logo);
+    safeSetStorage(STORAGE_KEYS.LOGO, logo);
     saveStudioLogoInSupabase(logo);
   };
 
   const handleResetLogo = () => {
     setSavedLogo(null);
-    localStorage.removeItem(STORAGE_KEYS.LOGO);
+    safeRemoveStorage(STORAGE_KEYS.LOGO);
     saveStudioLogoInSupabase(null);
   };
 
   // Studio announcement ticker handler (Boss)
   const handleSaveAnnouncement = async (newText: string) => {
     setAnnouncement(newText);
-    localStorage.setItem(STORAGE_KEYS.ANNOUNCEMENT, newText);
+    safeSetStorage(STORAGE_KEYS.ANNOUNCEMENT, newText);
     await saveStudioAnnouncementInSupabase(newText);
     playChime();
   };
@@ -1596,6 +1613,7 @@ export default function App() {
             onOpenRegisterModal={() => setIsRegisterModalOpen(true)}
             onOpenChatModal={handleOpenChatModal}
             unreadChatCount={unreadChatCount}
+            onForceSync={handleForceSync}
             onSignOut={handleSignOut}
             notifications={notifications}
             readNotifIds={readNotifIds}
